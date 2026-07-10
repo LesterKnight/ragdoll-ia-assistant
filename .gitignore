@@ -1,0 +1,25 @@
+# Dados do RAG (captura + base processada) - "treinamento", nao deve subir
+RAG/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Artefatos de codigo gerado (testes)
+hello_world.gd
+log_ola_mundo.gd
+*.gd.out
+
+# Saidas temporarias
+/tmp/
+*.log
+*.tmp
+
+# SO / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

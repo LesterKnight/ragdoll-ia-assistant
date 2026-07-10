@@ -1,0 +1,12 @@
+{
+  "crawl": {
+    "escopo": 2,
+    "delay_ms": 2000,
+    "limite": 0
+  },
+  "process": {
+    "chunk_model": "gemma4",
+    "summary_model": "qwen3.6",
+    "num_ctx": 16384
+  }
+}
