@@ -8,7 +8,7 @@
   },
   "process": {
     "chunk_model": "gemma4",
-    "summary_model": "qwen3.6",
+    "summary_model": "qwythos9b",
     "num_ctx": 16384
   }
 }

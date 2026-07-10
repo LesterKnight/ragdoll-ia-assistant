@@ -26,7 +26,7 @@ from bs4 import BeautifulSoup, NavigableString
 
 OLLAMA = "http://localhost:11434"
 CHUNK_MODEL = "gemma4"      # chunking: roda por pagina, gemma4 e ~5x mais rapido
-SUMMARY_MODEL = "qwen3.6"   # summary: roda 1x por site, qwen3.6 da mais qualidade
+SUMMARY_MODEL = "qwythos9b"  # summary: roda 1x por site; cabe na GPU, sem crash de VRAM
 EMBED_MODEL = "nomic-embed-text"
 
 TARGET_TOKENS = 400      # alvo por chunk (~aproximado)
