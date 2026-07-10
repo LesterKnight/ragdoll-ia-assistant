@@ -1,5 +1,7 @@
 # Dados do RAG (captura + base processada) - "treinamento", nao deve subir
 RAG/
+RAG.zip
+*.zip
 
 # Python
 __pycache__/

@@ -10,7 +10,7 @@ Construir uma base RAG de documentação. O `qwen3.6` (forte) constrói a base *
 | Papel | Modelo | Status |
 |-------|--------|--------|
 | Chunking semântico (por página) | `gemma4` (9.6GB, ~5x mais rápido que qwen3.6) | instalado |
-| `summary.md` (1x por site) | `qwen3.6` | instalado |
+| `summary.md` (1x por site) | `qwythos9b` (cabe na GPU, sem crash) | instalado |
 | Embeddings (768 dims) | `nomic-embed-text` | instalado |
 | Consumo (runtime) | `qwen2.5-coder:1.5b` | instalado |
 
@@ -31,7 +31,8 @@ Construir uma base RAG de documentação. O `qwen3.6` (forte) constrói a base *
         ├── crawl_manifest.json   ← manifesto da captura (consumido pela Fase B)
         ├── documents.jsonl       ← {texto, vetor, metadados} por chunk
         ├── index.json            ← índice de docs da pasta
-        └── summary.md            ← resumo (qwen3.6)
+        ├── summary.md            ← resumo (qwythos9b, adaptativo)
+        └── process_state.json    ← progresso da Fase B (retomada)
 ```
 
 ## Arquivos de configuração (defaults)
@@ -43,7 +44,7 @@ Dois arquivos JSON na raiz definem os defaults dos agentes. Precedência:
 ```json
 {
   "crawl":   { "escopo": 2, "delay_ms": 2000, "limite": 0 },
-  "process": { "chunk_model": "gemma4", "summary_model": "qwen3.6", "num_ctx": 16384 }
+  "process": { "chunk_model": "gemma4", "summary_model": "qwythos9b", "num_ctx": 16384 }
 }
 ```
 - `num_ctx` limita o KV cache do modelo (evita o crash do qwen3.6 na VRAM de 8GB).
@@ -101,18 +102,27 @@ Fluxo:
 
 Uso:
 ```
-python process.py --dir "RAG/<dominio-simplificado>" [--limpar-raw]
-                  [--chunk-model <modelo>] [--summary-model <modelo>]
+python process.py --dir "RAG/<dominio-simplificado>" [--limpar-raw] [--reset]
+                  [--chunk-model <modelo>] [--summary-model <modelo>] [--num-ctx N]
 ```
 
-Modelos configuráveis (defaults: `gemma4` chunking, `qwen3.6` summary):
+Modelos configuráveis (defaults: `gemma4` chunking, `qwythos9b` summary):
 - `--chunk-model` — troca o modelo do chunking por qualquer outro instalado no Ollama.
 - `--summary-model` — troca o modelo do summary.
-- `think: false` é aplicado automaticamente apenas a modelos `qwen3` (os demais ignoram).
+- `think: false` é aplicado automaticamente a modelos de raciocínio (`qwen3`, `qwythos`).
+
+Retomada (resume) — seguro para jobs longos:
+- Estado salvo em `process_state.json` (páginas concluídas) após CADA página.
+- `documents.jsonl` é aberto em modo APPEND (nunca trunca o já feito).
+- Ao reiniciar: pula páginas concluídas, saneia chunks parciais de uma página
+  interrompida por crash, e continua de onde parou.
+- `--reset` força reprocessar tudo do zero.
+- `docs_meta`/contagens são reconstruídos do `documents.jsonl` completo no fim
+  (funciona mesmo após várias retomadas).
 
 Fluxo:
 ```
-para cada HTML em raw/ (SERIAL, uma página por vez):
+para cada HTML em raw/ (SERIAL, uma página por vez; pula se já concluída):
    1. limpa (remove nav/menu/footer/sidebar/scripts via seletores)
    2. acha container principal (main/article/.rst-content/etc.)
    3. extrai texto preservando: títulos (#), blocos de código (```), tabelas (markdown), Mermaid
@@ -122,9 +132,10 @@ para cada HTML em raw/ (SERIAL, uma página por vez):
         - fallback determinístico (corte por título + tamanho) se a saída for malformada
    5. overlap (~50 tokens) entre chunks
    6. embedding de cada chunk via nomic-embed-text (serial)
-monta:
-   7. documents.jsonl + index.json
-   8. summary.md (qwen3.6)
+   7. flush + marca página como concluída no process_state.json
+monta (reconstruído do documents.jsonl completo):
+   8. documents.jsonl + index.json
+   9. summary.md (qwythos9b, adaptativo: por seção ou amostra distribuída)
    9. cria/atualiza RAG/index.md (catálogo-mestre)
 ```
 
@@ -187,8 +198,8 @@ Papel do agente: **só orquestrar** — perguntar, validar, disparar scripts, re
 | **Agente** | Derivar `RAG/<dominio>/` da URL |
 | **Agente** | Validar entrada; disparar scripts na ordem; reportar |
 | **`crawl.py`** | Crawl a partir da URL (delay+escopo); render completo; salvar `raw/`; manifesto; árvore dedup |
-| **`process.py`** | Limpar HTML; preservar código/tabelas/títulos/Mermaid; chunking via `qwen3.6` (+pré-divisão+fallback); embeddings; `documents.jsonl`/`index.json`/`summary.md`; atualizar `RAG/index.md`; `--limpar-raw`; tempo total |
-| **`qwen3.6`** | Chunking semântico + `summary.md` (think desligado) |
+| **`process.py`** | Limpar HTML; preservar código/tabelas/títulos/Mermaid; chunking via `gemma4` (+pré-divisão+fallback); embeddings; `documents.jsonl`/`index.json`/`summary.md`; retomada (`process_state.json`); atualizar `RAG/index.md`; `--limpar-raw`; tempo total |
+| **`gemma4` / `qwythos9b`** | Chunking semântico (gemma4) + `summary.md` (qwythos9b) |
 | **`query.py`** | Runtime: escolhe domínio → busca cosseno → prompt |
 | **`qwen2.5-coder`** | Responder usando os chunks recuperados |
 

@@ -4,21 +4,23 @@ Lista de melhorias pendentes e ideias para lembrar depois. Nada aqui está imple
 
 ---
 
-## 1. Retomada de crawl (resume) — PRIORIDADE
+## 1. Retomada — PARCIALMENTE FEITO
 
-**Problema:** o crawl atual **não retoma**. Se cair energia / for interrompido:
+### 1a. Retomada do processamento (Fase B) — FEITO ✅
+`process.py` agora retoma: estado em `process_state.json` (por página), `documents.jsonl`
+em modo append, saneia chunks parciais de crash, pula páginas já feitas, `--reset` para
+recomeçar. Testado com simulação de crash.
+
+### 1b. Retomada do crawl (Fase A) — PENDENTE
+O crawl ainda **não retoma**. Se cair energia / for interrompido:
 - o conjunto `visited` e a fila vivem só na memória → perdidos;
-- não há checagem de arquivo existente → ao reiniciar, **re-baixa tudo do zero**, sobrescrevendo `raw/`;
-- o `crawl_manifest.json` só é gravado **no fim** → uma interrupção deixa os HTMLs em `raw/`
-  **sem manifesto**, e o `process.py` depende do manifesto (arquivos "órfãos").
+- não há checagem de arquivo existente → ao reiniciar, **re-baixa tudo do zero**;
+- o `crawl_manifest.json` só é gravado **no fim** → interrupção deixa HTMLs sem manifesto.
 
 **Melhorias (ordenadas por custo/benefício):**
 1. **Pular páginas já baixadas** — se `raw/<arquivo>.html` já existe, não re-navegar.
-   (mais barato, resolve ~80% do problema de retomada)
-2. **Manifesto incremental** — escrever/atualizar `crawl_manifest.json` a cada N páginas,
-   não só no fim. Assim uma interrupção deixa uma base processável.
-3. **Persistir estado** — salvar `visited` + fila em `crawl_state.json` periodicamente,
-   para retomar exatamente de onde parou (fila pendente inclusa).
+2. **Manifesto incremental** — gravar `crawl_manifest.json` a cada N páginas.
+3. **Persistir estado** — salvar `visited` + fila em `crawl_state.json` periodicamente.
 
 ---
 

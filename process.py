@@ -376,7 +376,8 @@ def update_master_index(rag_root: Path):
 # ------------------------- pipeline -------------------------
 
 def process(dir_path: str, limpar_raw: bool = False,
-            chunk_model: str = None, summary_model: str = None, num_ctx: int = None):
+            chunk_model: str = None, summary_model: str = None, num_ctx: int = None,
+            reset: bool = False):
     global CHUNK_MODEL, SUMMARY_MODEL, NUM_CTX
     if chunk_model:
         CHUNK_MODEL = chunk_model
@@ -401,14 +402,48 @@ def process(dir_path: str, limpar_raw: bool = False,
     url_base = manifest.get("url_base", "")
 
     documents_path = out_dir / "documents.jsonl"
-    docs_meta = []
-    total_chunks = 0
-    errors = 0
-
+    state_path = out_dir / "process_state.json"
     pages = manifest.get("pages", [])
     total_pages = len(pages)
-    with documents_path.open("w", encoding="utf-8") as fout:
+    errors = 0
+
+    # --- retomada (resume) ---
+    if reset:
+        documents_path.unlink(missing_ok=True)
+        state_path.unlink(missing_ok=True)
+        print("reset: documents.jsonl e estado apagados; processando do zero", flush=True)
+
+    done = set()
+    if state_path.exists():
+        try:
+            done = set(json.loads(state_path.read_text(encoding="utf-8")).get("done", []))
+        except Exception:
+            done = set()
+
+    # sanea documents.jsonl: mantem apenas chunks de paginas CONCLUIDAS
+    # (descarta chunks parciais de uma pagina interrompida por crash)
+    if documents_path.exists():
+        kept = []
+        for line in documents_path.read_text(encoding="utf-8").splitlines():
+            try:
+                if json.loads(line).get("url") in done:
+                    kept.append(line)
+            except Exception:
+                pass
+        documents_path.write_text(("\n".join(kept) + "\n") if kept else "", encoding="utf-8")
+
+    if done:
+        print(f"retomando: {len(done)} de {total_pages} paginas ja feitas serao puladas", flush=True)
+
+    def _save_done():
+        state_path.write_text(json.dumps({"done": sorted(done)}, ensure_ascii=False),
+                              encoding="utf-8")
+
+    # modo append: nunca trunca o que ja foi processado
+    with documents_path.open("a", encoding="utf-8") as fout:
         for n, page in enumerate(pages, 1):
+            if page["url"] in done:
+                continue
             print(f"[{n}/{total_pages}] processando: {page['url']}", flush=True)
             html_file = raw_dir / page["file"]
             if not html_file.exists():
@@ -419,6 +454,7 @@ def process(dir_path: str, limpar_raw: bool = False,
                 main = clean_html(html)
                 text = block_text(main)
                 if not text.strip():
+                    done.add(page["url"]); _save_done()
                     continue
 
                 chunks = chunk_semantic(text)
@@ -432,14 +468,29 @@ def process(dir_path: str, limpar_raw: bool = False,
                         "order": order,
                     }
                     fout.write(json.dumps(record, ensure_ascii=False) + "\n")
-                    total_chunks += 1
-
-                docs_meta.append({"url": page["url"], "title": page.get("title", ""),
-                                  "chunks": len(chunks)})
+                fout.flush()  # garante que a pagina foi persistida antes de marcar como feita
+                done.add(page["url"]); _save_done()
                 print(f"processado: {page['url']} -> {len(chunks)} chunks", flush=True)
             except Exception as e:
                 errors += 1
                 print(f"[ERRO] {page['url']}: {e}", flush=True)
+
+    # --- finaliza: reconstroi docs_meta e contagem a partir do arquivo COMPLETO ---
+    docs_meta = []
+    total_chunks = 0
+    seen = {}
+    if documents_path.exists():
+        for line in documents_path.read_text(encoding="utf-8").splitlines():
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            total_chunks += 1
+            u = r.get("url", "")
+            if u not in seen:
+                seen[u] = {"url": u, "title": r.get("title", ""), "chunks": 0}
+                docs_meta.append(seen[u])
+            seen[u]["chunks"] += 1
 
     # index.json da pasta
     index_data = {
@@ -502,8 +553,11 @@ def main():
                     help=f"modelo do summary (default config: {cfg.get('summary_model', SUMMARY_MODEL)})")
     ap.add_argument("--num-ctx", type=int, default=cfg.get("num_ctx"),
                     help=f"limite de contexto (default config: {cfg.get('num_ctx')})")
+    ap.add_argument("--reset", action="store_true",
+                    help="ignora progresso salvo e reprocessa tudo do zero")
     args = ap.parse_args()
-    process(args.dir, args.limpar_raw, args.chunk_model, args.summary_model, args.num_ctx)
+    process(args.dir, args.limpar_raw, args.chunk_model, args.summary_model,
+            args.num_ctx, args.reset)
 
 
 if __name__ == "__main__":
