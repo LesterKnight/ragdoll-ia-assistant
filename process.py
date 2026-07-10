@@ -20,6 +20,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup, NavigableString
@@ -286,19 +287,61 @@ def _extract_json(s: str):
 
 # ------------------------- summary -------------------------
 
+def _agrupar_por_secao(url_base: str, docs_meta: list) -> dict:
+    """Agrupa as paginas pela secao (primeiro segmento apos o prefixo da url_base)."""
+    from collections import defaultdict
+    base_parts = [p for p in urlparse(url_base).path.split("/") if p]
+    n = len(base_parts)  # ex: /en/stable -> 2
+    secoes = defaultdict(list)
+    for d in docs_meta:
+        parts = [p for p in urlparse(d["url"]).path.split("/") if p]
+        secao = parts[n] if len(parts) > n else "(raiz)"
+        secoes[secao].append(d.get("title", ""))
+    return secoes
+
+
+def _amostra_distribuida(docs_meta: list, n: int) -> list:
+    """Pega n titulos igualmente espacados ao longo de toda a base (representa o todo)."""
+    total = len(docs_meta)
+    if total <= n:
+        return [d.get("title", "") for d in docs_meta]
+    passo = total / n
+    return [docs_meta[int(i * passo)].get("title", "") for i in range(n)]
+
+
 def build_summary(domain: str, url_base: str, docs_meta: list) -> str:
-    titles = "\n".join(f"- {d['title']} ({d['url']})" for d in docs_meta[:60])
+    """
+    Gera um panorama que cobre a base INTEIRA sem estourar o contexto.
+    Estrategia adaptativa (funciona em qualquer estrutura de site):
+    - site ESTRUTURADO (>= 3 secoes uteis): panorama por secao (contagem + exemplos)
+    - site PLANO (poucas secoes): amostra de titulos distribuida por toda a base
+    """
+    secoes = _agrupar_por_secao(url_base, docs_meta)
+    # ignora pastas tecnicas (downloads/imagens/assets) na decisao
+    secoes_uteis = {s: t for s, t in secoes.items() if not s.startswith(("_", "."))}
+
+    if len(secoes_uteis) >= 3:
+        linhas = []
+        for sec, titles in sorted(secoes_uteis.items(), key=lambda x: -len(x[1])):
+            exemplos = "; ".join(t.split("—")[0].strip() for t in titles[:6] if t)
+            linhas.append(f"- {sec}: {len(titles)} paginas (ex: {exemplos})")
+        overview = "Estrutura por secoes:\n" + "\n".join(linhas)
+    else:
+        amostra = [t for t in _amostra_distribuida(docs_meta, 80) if t]
+        overview = ("Amostra de titulos distribuida por toda a base:\n"
+                    + "\n".join(f"- {t}" for t in amostra))
+
     prompt = (
-        f"Gere um resumo conciso em portugues da documentacao do dominio '{domain}'. "
-        "Descreva do que trata, os principais topicos e como esta organizada. "
-        "Responda em Markdown, maximo 300 palavras.\n\n"
-        f"Paginas processadas:\n{titles}"
+        f"Gere um resumo conciso em portugues da documentacao do dominio '{domain}' "
+        f"(total: {len(docs_meta)} paginas). Descreva do que trata, os principais topicos "
+        "e como esta organizada. Responda em Markdown, maximo 350 palavras.\n\n"
+        f"{overview}"
     )
     try:
         return ollama_chat(prompt, SUMMARY_MODEL).strip()
     except Exception as e:
-        return f"# Resumo\n\nDocumentacao de {domain}. ({len(docs_meta)} paginas). "\
-               f"(resumo automatico indisponivel: {e})"
+        return (f"# Resumo\n\nDocumentacao de {domain} ({len(docs_meta)} paginas).\n\n"
+                f"{overview}\n\n(resumo automatico indisponivel: {e})")
 
 
 # ------------------------- catalogo mestre -------------------------
