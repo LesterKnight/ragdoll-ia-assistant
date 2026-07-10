@@ -1,7 +1,7 @@
 ---
 description: Programador agentico que gera codigo fundamentado na documentacao (RAG)
 mode: primary
-model: ollama/qwen2.5-coder:7b
+model: ollama/qwythos9b
 temperature: 0.2
 permission:
   bash: allow
@@ -35,7 +35,7 @@ Nao invente APIs. Se precisa de conhecimento de uma doc, chame `code_generator`.
 
 ## Regras
 
-- Modelo padrao de geracao do code_generator: qwen2.5-coder:7b. So troque se o usuario pedir.
+- O code_generator usa o modelo definido em config_programador.json. So passe 'model' se o usuario pedir.
 - Antes de editar um arquivo existente, leia-o primeiro.
 - Prefira mudancas minimas e claras.
 - Se a documentacao necessaria nao estiver no RAG, avise o usuario que ele pode

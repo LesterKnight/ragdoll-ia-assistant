@@ -57,6 +57,23 @@ def base_host_of(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def default_prefix(url: str) -> str:
+    """
+    Deriva o prefixo de caminho a partir da URL inicial.
+    Ex: /en/stable/            -> /en/stable/   (ingles + versao stable)
+        /en/stable/index.html  -> /en/stable/
+    So links sob esse prefixo sao seguidos (restringe idioma/versao).
+    """
+    path = urlparse(url).path or "/"
+    if not path.endswith("/"):
+        path = path.rsplit("/", 1)[0] + "/"
+    return path
+
+
+def under_prefix(url: str, prefix: str) -> bool:
+    return urlparse(url).path.startswith(prefix)
+
+
 def url_to_filename(url: str) -> str:
     """Converte URL em nome de arquivo seguro para raw/."""
     p = urlparse(url)
@@ -71,20 +88,24 @@ def url_to_filename(url: str) -> str:
 
 # ------------------------- Extracao de links -------------------------
 
-def extract_links(html: str, current_url: str, base_host: str):
+def extract_links(html: str, current_url: str, base_host: str, prefix: str):
     soup = BeautifulSoup(html, "html.parser")
     links = []
     for a in soup.find_all("a", href=True):
         absolute = urljoin(current_url, a["href"])
         absolute = normalize_url(absolute)
-        if absolute.startswith("http") and same_domain(absolute, base_host):
+        if (absolute.startswith("http")
+                and same_domain(absolute, base_host)
+                and under_prefix(absolute, prefix)):
             links.append(absolute)
     return list(dict.fromkeys(links))
 
 
 # ------------------------- Crawl principal -------------------------
 
-def crawl(url: str, escopo: int, delay_ms: int, limite: int, restart_every: int = 40):
+def crawl(url: str, escopo: int, delay_ms: int, limite: int,
+          nav_timeout: int = 30000, idle_timeout: int = 15000,
+          prefixo: str = None, restart_every: int = 40):
     base_host = base_host_of(url)
     domain_slug = simplify_domain(url)
     project_root = Path(__file__).resolve().parent
@@ -94,6 +115,8 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int, restart_every: int 
 
     start = normalize_url(url)
     delay_s = max(0, delay_ms) / 1000.0
+    prefix = prefixo or default_prefix(url)
+    print(f"[prefixo]: seguindo apenas links sob {prefix}", flush=True)
 
     manifest = []
     errors = []
@@ -125,13 +148,14 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int, restart_every: int 
             visited.add(current)
 
             try:
-                page.goto(current, wait_until="domcontentloaded", timeout=30000)
+                page.goto(current, wait_until="domcontentloaded", timeout=nav_timeout)
                 try:
-                    page.wait_for_load_state("networkidle", timeout=15000)
+                    page.wait_for_load_state("networkidle", timeout=idle_timeout)
                 except PWTimeout:
                     pass  # render pesado; segue com o que tem
                 html = page.content()
                 title = page.title()
+                real_url = page.url  # URL real apos redirecionamentos (base correta p/ links relativos)
 
                 fname = url_to_filename(current)
                 (raw_dir / fname).write_text(html, encoding="utf-8")
@@ -141,7 +165,7 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int, restart_every: int 
 
                 # descobre links da pagina se ainda houver profundidade no escopo
                 if depth < escopo:
-                    for link in extract_links(html, current, base_host):
+                    for link in extract_links(html, real_url, base_host, prefix):
                         if link not in visited:
                             queue.append((link, depth + 1))
 
@@ -168,6 +192,9 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int, restart_every: int 
         "domain_slug": domain_slug,
         "escopo": escopo,
         "delay_ms": delay_ms,
+        "nav_timeout": nav_timeout,
+        "idle_timeout": idle_timeout,
+        "prefixo": prefix,
         "discovery": "crawl",
         "pages": manifest,
         "errors": errors,
@@ -195,13 +222,20 @@ def main():
                     help=f"delay entre requisicoes em ms (default: {cfg.get('delay_ms', 2000)})")
     ap.add_argument("--limite", type=int, default=cfg.get("limite", 0),
                     help=f"limite de paginas, 0 = sem limite (default: {cfg.get('limite', 0)})")
+    ap.add_argument("--nav-timeout", type=int, default=cfg.get("nav_timeout", 30000),
+                    help=f"timeout de navegacao/goto em ms (default: {cfg.get('nav_timeout', 30000)})")
+    ap.add_argument("--idle-timeout", type=int, default=cfg.get("idle_timeout", 15000),
+                    help=f"timeout do networkidle em ms (default: {cfg.get('idle_timeout', 15000)})")
+    ap.add_argument("--prefixo", default=None,
+                    help="restringe links a este prefixo de caminho (default: diretorio da URL)")
     args = ap.parse_args()
 
     if not args.url.startswith(("http://", "https://")):
         print("[ERRO]: URL deve iniciar com http:// ou https://", file=sys.stderr)
         sys.exit(1)
 
-    crawl(args.url, args.escopo, args.delay, args.limite)
+    crawl(args.url, args.escopo, args.delay, args.limite,
+          args.nav_timeout, args.idle_timeout, args.prefixo)
 
 
 if __name__ == "__main__":

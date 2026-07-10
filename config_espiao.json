@@ -2,7 +2,9 @@
   "crawl": {
     "escopo": 2,
     "delay_ms": 2000,
-    "limite": 0
+    "limite": 0,
+    "nav_timeout": 30000,
+    "idle_timeout": 15000
   },
   "process": {
     "chunk_model": "gemma4",

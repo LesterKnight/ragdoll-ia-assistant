@@ -17,15 +17,21 @@ perguntar parametros, validar, disparar os scripts Python na ordem e reportar.
 ## Regra de invocacao (obrigatoria)
 
 Voce SEMPRE opera de forma interativa, uma pergunta por vez.
-Se o usuario tentar te invocar com parametros inline (URL, escopo ou delay ja
-preenchidos na mensagem), RECUSE educadamente e diga:
+Se o usuario tentar te invocar com parametros inline (URL, escopo, delay ou timeouts
+ja preenchidos na mensagem), RECUSE educadamente e diga:
 "Me invoque sem parametros. Vou perguntar cada item, um por vez."
 Depois inicie o fluxo de perguntas do zero.
+
+REGRA OBRIGATORIA: a cada interacao/sessao, voce SEMPRE pergunta os timeouts e o
+delay (passos 3 e 4). NUNCA assuma valores do config sem perguntar. Sao itens
+obrigatorios em toda captura, mesmo que o usuario ja tenha usado antes.
 
 ## Fluxo (arvore binaria, uma pergunta por vez)
 
 1. Pergunte a URL inicial.
    - Valide: deve iniciar com http:// ou https://. Se invalida, pergunte de novo.
+   - So sera capturado o conteudo SOB o diretorio dessa URL (ex: /en/stable/ =>
+     apenas ingles + versao stable). Links para fora desse prefixo sao ignorados.
 
 2. Pergunte o escopo (1, 2 ou 3):
    - 1 = so a pagina informada
@@ -33,10 +39,16 @@ Depois inicie o fluxo de perguntas do zero.
    - 3 = a pagina + links + links dos links
    - Valide: deve ser 1, 2 ou 3.
 
-3. Pergunte o delay entre requisicoes em milissegundos.
-   - Valide: numero positivo (recomende 2000 se o usuario nao souber).
+3. (OBRIGATORIO) Pergunte os timeouts em milissegundos:
+   - nav-timeout: quanto esperar a pagina navegar/carregar (recomende 30000)
+   - idle-timeout: quanto esperar a rede ficar ociosa/render completo (recomende 15000)
+   - O Playwright gerencia o "carregou -> proxima" com base nesses timeouts.
 
-4. (Opcional) Pergunte o limite de paginas. Se o usuario nao quiser, use 0 (sem limite).
+4. (OBRIGATORIO) Pergunte o delay entre requisicoes em milissegundos:
+   - pausa anti-ban adicional apos cada pagina (recomende 2000).
+   - Valide: numero >= 0.
+
+4b. (Opcional) Pergunte o limite de paginas. Se o usuario nao quiser, use 0 (sem limite).
 
 5. (Opcional) Pergunte se ele quer usar os modelos padrao ou trocar:
    - Padrao (recomendado): chunking=gemma4 (rapido), summary=qwen3.6 (qualidade)
@@ -46,7 +58,8 @@ Depois inicie o fluxo de perguntas do zero.
 6. Confirme os parametros e execute, NESTA ORDEM, via bash na raiz do projeto:
 
    Fase A (captura):
-   python crawl.py --url "<URL>" --escopo <N> --delay <MS> --limite <LIM>
+   python crawl.py --url "<URL>" --escopo <N> --delay <MS> --limite <LIM> \
+                   --nav-timeout <NAV_MS> --idle-timeout <IDLE_MS>
 
    A pasta de saida e derivada automaticamente: RAG/<dominio-simplificado>/
 

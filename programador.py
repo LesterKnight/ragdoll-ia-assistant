@@ -24,14 +24,19 @@ import requests
 import rag_retrieve
 
 OLLAMA = "http://localhost:11434"
-GEN_MODEL = "qwen2.5-coder:7b"
+GEN_MODEL = "qwythos9b"
+
+
+def _is_reasoning_model(model: str) -> bool:
+    m = model.lower()
+    return "qwen3" in m or "qwythos" in m
 
 
 def ollama_chat(prompt: str, model: str, temperature: float = 0.2, timeout: int = 600) -> str:
     payload = {"model": model, "prompt": prompt, "stream": False,
                "options": {"temperature": temperature}}
-    if "qwen3" in model:
-        payload["think"] = False
+    if _is_reasoning_model(model):
+        payload["think"] = False  # desliga cadeia de raciocinio (mais rapido, saida direta)
     r = requests.post(f"{OLLAMA}/api/generate", json=payload, timeout=timeout)
     r.raise_for_status()
     return r.json().get("response", "")
@@ -98,22 +103,31 @@ def mostrar_fontes(chunks):
 
 
 def extrair_codigo(texto: str) -> str:
-    """Extrai apenas o conteudo do primeiro bloco ```...``` (para gravar arquivo limpo)."""
+    """
+    Extrai o codigo do texto para gravar arquivo limpo.
+    Robusto a modelos de raciocinio: remove <think>...</think> e pega o ULTIMO
+    bloco ```...``` (o codigo final, nao rascunhos do raciocinio).
+    """
     import re
-    m = re.search(r"```[a-zA-Z0-9_+-]*\n(.*?)```", texto, re.DOTALL)
-    return m.group(1).rstrip() if m else texto
+    # remove blocos de raciocinio
+    texto = re.sub(r"<think>.*?</think>", "", texto, flags=re.DOTALL)
+    blocos = re.findall(r"```[a-zA-Z0-9_+-]*\n(.*?)```", texto, re.DOTALL)
+    if blocos:
+        return blocos[-1].rstrip()
+    return texto.strip()
 
 
 def main():
     from config_util import load_config
     cfg = load_config("config_programador.json")
+    gen_default = cfg.get("model", GEN_MODEL)
 
     ap = argparse.ArgumentParser(description="Gerador de codigo fundamentado no RAG")
     ap.add_argument("tarefa")
     ap.add_argument("--dominio", default=cfg.get("dominio"), help="pasta do dominio (default: auto)")
     ap.add_argument("--topk", type=int, default=cfg.get("topk", 5))
-    ap.add_argument("--model", default=cfg.get("model", GEN_MODEL),
-                    help=f"modelo de geracao (default config: {cfg.get('model', GEN_MODEL)})")
+    ap.add_argument("--model", default=gen_default,
+                    help=f"modelo de geracao (default config: {gen_default})")
     ap.add_argument("--contexto", default="", help="codigo existente para dar contexto")
     ap.add_argument("--idioma", default=cfg.get("idioma", "pt"), choices=["pt", "en"],
                     help="idioma dos comentarios")

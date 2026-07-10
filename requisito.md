@@ -50,8 +50,12 @@ Dois arquivos JSON na raiz definem os defaults dos agentes. Precedência:
 
 `config_programador.json` (geração de código):
 ```json
-{ "model": "qwen2.5-coder:7b", "topk": 5, "idioma": "pt", "dominio": null, "reescrever": false }
+{ "model": "qwythos9b", "topk": 5, "idioma": "pt", "dominio": null, "reescrever": false }
 ```
+- `model` = modelo usado pelo `code_generator`/`programador.py` (arg `--model` sobrescreve).
+- O modelo do **orquestrador** (agente `@programador`) fica no próprio `.opencode/agents/programador.md`
+  (trocável ali ou via Tab no TUI). São ajustes independentes; o alvo é usar **o melhor modelo
+  que couber na GPU** nos dois papéis (atualmente `qwythos9b`, unificado e sem troca de modelo).
 
 Loader: `config_util.py` (lê o JSON; se ausente/inválido, cai nos defaults internos).
 
@@ -218,7 +222,8 @@ Papel do agente: **só orquestrar** — perguntar, validar, disparar scripts, re
 
 ## Camada de programação (consumo do RAG para gerar código)
 
-Objetivo: gerar código **fundamentado na documentação** indexada, usando `qwen2.5-coder:7b`.
+Objetivo: gerar código **fundamentado na documentação** indexada. Modelo alvo: **o melhor
+que couber na GPU** (atualmente `qwythos9b` — Qwythos-9B Q4_K_M, ~6.3GB, 100% na GPU).
 
 ### Componentes
 ```
@@ -233,8 +238,8 @@ programador.py                    ← gerador de código fundamentado (Camada 3)
 python programador.py "tarefa" --dominio <slug> --out arquivo.ext
                       [--model M] [--topk N] [--idioma pt|en] [--reescrever] [--fontes]
 ```
-- Rápido (~13s), confiável, saída limpa (remove cercas markdown ao gravar com `--out`)
-- Default de geração: `qwen2.5-coder:7b` (cabe na 3060 Ti, roda 100% na GPU)
+- Rápido, confiável, saída limpa (remove cercas markdown ao gravar com `--out`)
+- Default de geração: `qwythos9b` (cabe na 3060 Ti, roda 100% na GPU)
 - `--reescrever` (opcional): reescreve a tarefa em termos de busca (+1 chamada, ~3x mais lento)
 - `--fontes` (opcional): imprime no stderr os trechos da doc recuperados (URL + score + snippet),
   provando que o RAG foi usado. Não polui o código gerado (que sai no stdout).
@@ -242,19 +247,27 @@ python programador.py "tarefa" --dominio <slug> --out arquivo.ext
 ### Modelos
 | Papel | Modelo | Override |
 |-------|--------|----------|
-| Geração de código | `qwen2.5-coder:7b` | `--model` / arg da tool |
+| Geração de código | `qwythos9b` (Qwythos-9B Q4_K_M) | `--model` / arg da tool |
 | Embeddings (retrieval) | `nomic-embed-text` | — |
 
-### Sobre a orquestração agêntica (`@programador`) — limitação de hardware
-O agente `@programador` e a tool `code_generator` existem e funcionam, mas a orquestração
-agêntica **local** esbarra na RTX 3060 Ti (8GB):
-- `qwen2.5-coder:7b` como orquestrador: cabe na GPU (rápido), mas **não faz tool-calling**
-  corretamente — escreve a chamada como texto em vez de executá-la.
-- `qwen3.6` como orquestrador: faz tool-calling, mas roda 74% na CPU (~90s+/tarefa).
+### Orquestração agêntica (`@programador`) — FUNCIONA com Qwythos-9B
+O agente `@programador` orquestra de ponta a ponta usando o **Qwythos-9B** como modelo
+(orquestrador **e** gerador — um único modelo, sem troca):
+- faz **tool-calling corretamente** (chama `code_generator`, grava o arquivo)
+- **cabe 100% na GPU** (Q4_K_M, ~6.3GB nos 8GB da 3060 Ti)
+- fluxo completo em ~34s; código Godot 4 idiomático (`velocity` + `move_and_slide`)
 
-Conclusão: nenhum modelo local cabe nos 8GB **e** orquestra bem ao mesmo tempo. Por isso o
-**script direto é o método principal**; o agente fica reservado para quando houver um
-orquestrador capaz (modelo cloud ou GPU maior).
+Histórico (por que Qwythos resolveu):
+- `qwen2.5-coder:7b` como orquestrador: rápido, mas **não faz tool-calling** (emite como texto).
+- `qwen3.6` como orquestrador: faz tool-calling, mas roda 74% na CPU (~90s+/tarefa).
+- `qwythos9b`: tool-calling correto **e** cabe na GPU → melhor dos dois mundos.
+
+Notas de implementação:
+- Modelos de raciocínio (`qwen3`, `qwythos`) rodam com `think: false` na geração — mais
+  rápido e evita blocos `<think>` na saída.
+- `extrair_codigo` remove `<think>...</think>` e pega o último bloco ``` (código final).
+
+O **script direto** (`programador.py`) continua disponível como caminho rápido e sem orquestração.
 
 ### Correção relevante: `small_model`
 O agente oculto `title` (gera título de sessão) usava o modelo pesado e travava a GPU antes
