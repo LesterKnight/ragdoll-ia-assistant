@@ -7,8 +7,8 @@
     "idle_timeout": 15000
   },
   "process": {
-    "chunk_model": "gemma4",
-    "summary_model": "qwythos9b",
+    "chunk_model": "qwen2.5-coder:1.5b",
+    "summary_model": null,
     "num_ctx": 16384
   }
 }

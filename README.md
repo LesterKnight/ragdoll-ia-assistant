@@ -26,7 +26,7 @@ Comandos diretos (um por fase):
 - `python query.py "pergunta" [--dominio <slug>] [--topk N]`
 - `python programador.py "tarefa" --dominio <slug> --out arquivo.gd [--model M] [--topk N] [--reescrever] [--fontes]`
 
-Modelos (Ollama, locais): chunking `gemma4` · resumo/geração `qwythos9b` · embeddings `nomic-embed-text`.
+Modelos (Ollama, locais): chunking `qwen2.5-coder:1.5b` · embeddings `nomic-embed-text`. Resumo e uso são **offload para o hy3** (sem modelo local de síntese).
 Pasta de saída: `RAG/<dominio-simplificado>/` (ex.: `docs.godotengine.org` → `RAG/docsgodotengineorg`).
 
 **Não leia o resto do README.** <!-- FIM-IA -->
@@ -92,16 +92,37 @@ crawl.py           parse.py            process.py                query.py / prog
 
 | Papel | Modelo | Override |
 |-------|--------|----------|
-| Chunking semântico (Fase C) | `gemma4` | `process.py --chunk-model` |
-| Resumo (`summary.md`, Fase C) | `qwythos9b` | `process.py --summary-model` |
+| Chunking semântico (Fase C) | `qwen2.5-coder:1.5b` (leve, 0% fallback) | `process.py --chunk-model` |
+| Resumo (`summary.md`, Fase C) | **offload p/ hy3** (`SUMMARY_MODEL=None`) | `process.py --summary-model M` |
 | Embeddings (768d) | `nomic-embed-text` | — |
-| Geração de código / uso (runtime) | `qwythos9b` | `programador.py --model` |
+| Uso / geração de código | **offload p/ hy3** (ou `qwythos9b` local p/ uso offline) | `programador.py --model` |
 | Tarefas auxiliares (`small_model`) | `ollama/qwythos9b` | config global do OpenCode |
 
 - Modelos de raciocínio (`qwen3`, `qwythos`) rodam com `think: false` na geração —
   mais rápido e evita blocos `<think>` na saída.
-- Alvo: **o melhor modelo que couber na GPU** (atualmente `qwythos9b` — Qwythos-9B
-  Q4_K_M, ~6.3GB, 100% na VRAM da RTX 3060 Ti de 8GB).
+- Chunking roda com `qwen2.5-coder:1.5b` (~1GB, cabe folgado na RTX 3060 Ti de 8GB).
+  A síntese (resumo/Uso) foi **offload para o hy3** — ver seção abaixo.
+
+---
+
+## Offload de síntese para o hy3
+
+O `qwythos9b` só faz **síntese** (resumo da base + responder/gerar código no Uso) — nunca
+o trabalho pesado (chunk/embed). Como essas são poucas chamadas e o assistente remoto (hy3)
+sintetiza melhor, o `qwythos9b` foi **removido do pipeline local** e seu papel foi assumido
+pelo hy3:
+
+- **Fase C — `summary.md`**: o `process.py` escreve um **esqueleto estrutural** (seções +
+  contagens/títulos) e marca o offload; a **prosa em português é redigida pelo hy3** sob
+  demanda (veja `RAG/docsgodotengineorg/summary.md` como exemplo). Para usar um modelo local
+  mesmo assim, passe `--summary-model qwythos9b`.
+- **Uso / Consumo**: em vez de `query.py`/`programador.py` chamarem `qwythos9b`, **pergunte
+  ao hy3**, que recupera os chunks relevantes de `documents.jsonl` e responde/gera código.
+  Os scripts `query.py`/`programador.py` permanecem disponíveis para **uso 100% offline**
+  (com `qwythos9b` local), se a privacidade exigir.
+
+Ganho: a GPU local passa a rodar só `qwen2.5-coder:1.5b` (chunk, 1GB) + `nomic-embed-text`
+(embed) — libera ~6.8GB de VRAM que o `qwythos9b` ocupava.
 
 ---
 
@@ -146,7 +167,7 @@ Dois JSON na raiz definem os defaults dos agentes. Precedência:
 ```json
 {
   "crawl":   { "escopo": 2, "delay_ms": 2000, "limite": 0 },
-  "process": { "chunk_model": "gemma4", "summary_model": "qwythos9b", "num_ctx": 16384 }
+  "process": { "chunk_model": "qwen2.5-coder:1.5b", "summary_model": null, "num_ctx": 16384 }
 }
 ```
 - `num_ctx` limita o KV cache do modelo (evita crash do modelo de raciocínio na VRAM de 8GB).
@@ -240,7 +261,7 @@ python process.py --dir "RAG/<dominio-simplificado>" [--limpar-raw] [--reset]
                   [--chunk-model <modelo>] [--summary-model <modelo>] [--num-ctx N]
 ```
 
-Modelos configuráveis via CLI (defaults: `gemma4` chunking, `qwythos9b` summary).
+Modelos configuráveis via CLI (defaults: `qwen2.5-coder:1.5b` chunking, summary offload p/ hy3).
 `think: false` é aplicado automaticamente a modelos de raciocínio (`qwen3`, `qwythos`).
 
 Retomada (resume):
@@ -255,7 +276,7 @@ Retomada (resume):
 Fluxo:
 ```
 para cada TEXTO LIMPO em clean.jsonl (SAÍDA da Fase B; SERIAL, uma página por vez; pula se já concluída):
-   1. chunking SEMÂNTICO via gemma4 sobre o texto já limpo:
+    1. chunking SEMÂNTICO via qwen2.5-coder:1.5b sobre o texto já limpo:
         - pré-divide páginas grandes por títulos (teto ~6000 tokens por chamada)
         - cada seção vira JSON {chunks:[...]} validado
         - fallback determinístico (corte por título + tamanho) se a saída for malformada
@@ -264,7 +285,7 @@ para cada TEXTO LIMPO em clean.jsonl (SAÍDA da Fase B; SERIAL, uma página por 
    4. flush + marca página como concluída no process_state.json
 monta (reconstruído do documents.jsonl completo):
    5. documents.jsonl + index.json
-   6. summary.md (qwythos9b, adaptativo: por seção ou amostra distribuída)
+    6. summary.md (esqueleto estrutural + prosa redigida pelo hy3 — offload)
    7. cria/atualiza RAG/index.md (catálogo-mestre)
 ```
 
@@ -279,6 +300,10 @@ Estatísticas finais impressas: pasta, documentos, chunks, erros, raw removido, 
 ---
 
 ## Uso / Consumo
+
+> **Offload para o hy3:** a forma recomendada de consumir a base é perguntar ao assistente
+> remoto (hy3), que recupera os chunks de `documents.jsonl` e responde/gera código. Os scripts
+> abaixo (`query.py`/`programador.py`) permanecem para **uso 100% offline** com `qwythos9b` local.
 
 ### `query.py` (consulta em linguagem natural) [fora das fases]
 
@@ -299,7 +324,7 @@ Fluxo:
 ### `programador.py` (geração de código fundamentada) [fora das fases]
 
 Objetivo: gerar código **fundamentado na documentação** indexada. Modelo alvo:
-**o melhor que couber na GPU** (atualmente `qwythos9b` — Q4_K_M, ~6.3GB, 100% na GPU).
+**o melhor que couber na GPU** para uso offline (atualmente `qwythos9b` — Q4_K_M, ~6.3GB, 100% na GPU); em uso online, o hy3 assume a geração.
 
 Método principal (recomendado): script direto
 ```
@@ -368,6 +393,12 @@ Papel do agente: **só orquestrar** — perguntar, validar, disparar scripts, re
 8. **Contador de tempo total** no `process.py`.
 9. **`small_model`** — o agente oculto `title` usava o modelo pesado e travava a GPU antes do
    trabalho; corrigido com `"small_model": "ollama/qwythos9b"` na config global.
+10. **Chunking robusto** — sanitização de control chars + retry (2×) antes do fallback
+    determinístico; `json.loads(..., strict=False)`.
+11. **Chunker trocado para `qwen2.5-coder:1.5b`** — benchmark vs `gemma4`: 0% vs 10% de
+    fallback e ~4× mais rápido (gemma4 nem cabe na VRAM de 8GB); mantém texto integral.
+12. **Offload de síntese para hy3** — `summary_model=None` por padrão; resumo e Uso feitos
+    pelo assistente remoto, tirando `qwythos9b` do pipeline local.
 
 ---
 
@@ -431,8 +462,10 @@ pip install -r requirements.txt
 python -m playwright install chromium
 
 ollama pull nomic-embed-text
-ollama pull gemma4
-ollama pull qwythos9b
+ollama pull qwen2.5-coder:1.5b   # chunker (padrao)
+# opcionais (fora do padrao):
+ollama pull gemma4              # chunker alternativo (nao cabe na VRAM de 8GB)
+ollama pull qwythos9b           # uso 100% offline (query.py/programador.py)
 ```
 
 ---
@@ -460,5 +493,6 @@ ollama pull qwythos9b
 
 - O crawling é **sequencial** e com delay, priorizando **não ser bloqueado**.
 - A base RAG (`RAG/`) **não é versionada** — é regenerável a partir dos scripts.
-- Modelos locais fazem o trabalho estreito das fases (chunk/embed/resumo);
-  a orquestração/entendimento do projeto fica com o assistente remoto ou com você.
+- Modelos locais fazem o trabalho estreito das fases (chunk/embed); a **síntese**
+  (resumo e uso) foi offload para o assistente remoto (hy3), e a orquestração/
+  entendimento do projeto também fica com o hy3 ou com você.

@@ -26,8 +26,8 @@ import requests
 from bs4 import BeautifulSoup, NavigableString
 
 OLLAMA = "http://localhost:11434"
-CHUNK_MODEL = "gemma4"      # chunking: roda por pagina, gemma4 e ~5x mais rapido
-SUMMARY_MODEL = "qwythos9b"  # summary: roda 1x por site; cabe na GPU, sem crash de VRAM
+CHUNK_MODEL = "qwen2.5-coder:1.5b"  # chunking: leve (1GB), especialista em codigo; 0% fallback nos testes
+SUMMARY_MODEL = None  # None = summary offload para hy3 (veja _summary_skeleton)
 EMBED_MODEL = "nomic-embed-text"
 
 TARGET_TOKENS = 400      # alvo por chunk (~aproximado)
@@ -205,27 +205,53 @@ def _apply_overlap(chunks):
 MODEL_INPUT_TOKENS = 6000  # teto por chamada ao modelo (mantem inferencia rapida e confiavel)
 
 
-def _semantic_one(section: str):
-    """Segmenta UMA secao (ja de tamanho controlado) via qwen3.6."""
+def _sanitize_for_json(s: str) -> str:
+    """Remove caracteres de controle invalidos em JSON (mantem \\t \\n \\r)."""
+    return "".join(ch if (ord(ch) >= 0x20 or ch in "\t\n\r") else " " for ch in s)
+
+
+def _parse_chunks(resp: str, section: str):
+    """Extrai e valida a lista de chunks do JSON. Levanta se invalido."""
+    data = _extract_json(resp)
+    chunks = data.get("chunks", [])
+    if not isinstance(chunks, list):
+        raise ValueError("campo 'chunks' nao e lista")
+    chunks = [c.strip() for c in chunks if isinstance(c, str) and c.strip()]
+    if not chunks:
+        raise ValueError("JSON valido mas sem chunks uteis")
+    if sum(len(c) for c in chunks) < 0.5 * len(section):
+        raise ValueError("JSON valido mas incompleto (<50% do texto)")
+    return chunks
+
+
+def _semantic_one(section: str, max_retries: int = 2):
+    """Segmenta UMA secao via modelo, com sanitizacao + retry antes do fallback."""
     if approx_tokens(section) <= MAX_TOKENS:
         return [section]
-    prompt = (
+    base_prompt = (
         "Voce e um segmentador de documentos para RAG. Divida o TEXTO abaixo em "
         "trechos semanticamente coerentes de no maximo ~400 palavras cada. "
         "Nunca corte no meio de um bloco de codigo (```) ou tabela. "
         "Responda APENAS com JSON valido no formato "
-        '{\"chunks\": [\"trecho1\", \"trecho2\", ...]} sem texto extra.\n\n'
+        '{"chunks": ["trecho1", "trecho2", ...]} sem texto extra.\n\n'
         "TEXTO:\n" + section
     )
-    try:
-        resp = ollama_chat(prompt, CHUNK_MODEL)
-        data = _extract_json(resp)
-        chunks = data.get("chunks", [])
-        chunks = [c.strip() for c in chunks if isinstance(c, str) and c.strip()]
-        if chunks and sum(len(c) for c in chunks) >= 0.5 * len(section):
-            return chunks
-    except Exception as e:
-        print(f"  (chunking semantico falhou: {e} -> fallback deterministico)", flush=True)
+    last_err = None
+    for attempt in range(max_retries + 1):
+        prompt = base_prompt
+        if attempt > 0:
+            prompt = ("IMPORTANTE: sua resposta anterior NAO era um JSON valido. "
+                      "Responda APENAS o objeto JSON, sem caracteres de controle e "
+                      "sem texto antes/depois.\n\n" + base_prompt)
+        try:
+            resp = ollama_chat(prompt, CHUNK_MODEL)
+            resp = _sanitize_for_json(resp)
+            return _parse_chunks(resp, section)
+        except Exception as e:
+            last_err = e
+            print(f"  (chunking semantico tentativa {attempt + 1} falhou: {e})", flush=True)
+    print(f"  (chunking semantico esgotou tentativas: {last_err} -> fallback deterministico)",
+          flush=True)
     return chunk_by_headings(section)
 
 
@@ -281,7 +307,7 @@ def _extract_json(s: str):
         elif c == "}":
             depth -= 1
             if depth == 0:
-                return json.loads(s[start:i + 1])
+                return json.loads(s[start:i + 1], strict=False)
     raise ValueError("JSON nao balanceado na resposta")
 
 
@@ -309,12 +335,10 @@ def _amostra_distribuida(docs_meta: list, n: int) -> list:
     return [docs_meta[int(i * passo)].get("title", "") for i in range(n)]
 
 
-def build_summary(domain: str, url_base: str, docs_meta: list) -> str:
+def _build_overview(domain: str, url_base: str, docs_meta: list) -> str:
     """
-    Gera um panorama que cobre a base INTEIRA sem estourar o contexto.
-    Estrategia adaptativa (funciona em qualquer estrutura de site):
-    - site ESTRUTURADO (>= 3 secoes uteis): panorama por secao (contagem + exemplos)
-    - site PLANO (poucas secoes): amostra de titulos distribuida por toda a base
+    Painel estrutural da base (secoes+contagens ou amostra de titulos),
+    usado tanto pelo summary via modelo quanto pelo esqueleto offload.
     """
     secoes = _agrupar_por_secao(url_base, docs_meta)
     # ignora pastas tecnicas (downloads/imagens/assets) na decisao
@@ -325,12 +349,20 @@ def build_summary(domain: str, url_base: str, docs_meta: list) -> str:
         for sec, titles in sorted(secoes_uteis.items(), key=lambda x: -len(x[1])):
             exemplos = "; ".join(t.split("—")[0].strip() for t in titles[:6] if t)
             linhas.append(f"- {sec}: {len(titles)} paginas (ex: {exemplos})")
-        overview = "Estrutura por secoes:\n" + "\n".join(linhas)
-    else:
-        amostra = [t for t in _amostra_distribuida(docs_meta, 80) if t]
-        overview = ("Amostra de titulos distribuida por toda a base:\n"
-                    + "\n".join(f"- {t}" for t in amostra))
+        return "Estrutura por secoes:\n" + "\n".join(linhas)
+    amostra = [t for t in _amostra_distribuida(docs_meta, 80) if t]
+    return ("Amostra de titulos distribuida por toda a base:\n"
+            + "\n".join(f"- {t}" for t in amostra))
 
+
+def build_summary(domain: str, url_base: str, docs_meta: list) -> str:
+    """
+    Gera um panorama que cobre a base INTEIRA sem estourar o contexto.
+    Estrategia adaptativa (funciona em qualquer estrutura de site):
+    - site ESTRUTURADO (>= 3 secoes uteis): panorama por secao (contagem + exemplos)
+    - site PLANO (poucas secoes): amostra de titulos distribuida por toda a base
+    """
+    overview = _build_overview(domain, url_base, docs_meta)
     prompt = (
         f"Gere um resumo conciso em portugues da documentacao do dominio '{domain}' "
         f"(total: {len(docs_meta)} paginas). Descreva do que trata, os principais topicos "
@@ -342,6 +374,17 @@ def build_summary(domain: str, url_base: str, docs_meta: list) -> str:
     except Exception as e:
         return (f"# Resumo\n\nDocumentacao de {domain} ({len(docs_meta)} paginas).\n\n"
                 f"{overview}\n\n(resumo automatico indisponivel: {e})")
+
+
+def _summary_skeleton(domain: str, url_base: str, docs_meta: list) -> str:
+    """Esqueleto estrutural quando o summary e offload para o hy3 (sem modelo local)."""
+    overview = _build_overview(domain, url_base, docs_meta)
+    return (
+        f"# Resumo — {domain}\n\n"
+        "> Offload de qwythos9b para o assistente hy3. Abaixo o esqueleto "
+        "estrutural; a prosa em portugues e redigida pelo hy3 sob demanda.\n\n"
+        f"Total: {len(docs_meta)} paginas.\n\n{overview}"
+    )
 
 
 # ------------------------- catalogo mestre -------------------------
@@ -530,9 +573,13 @@ def process(dir_path: str, limpar_raw: bool = False,
         json.dumps(index_data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    # summary.md
-    print("gerando summary.md (pode demorar)...", flush=True)
-    summary = build_summary(domain, url_base, docs_meta)
+    # summary.md (offload para hy3 quando SUMMARY_MODEL=None)
+    print("gerando summary.md...", flush=True)
+    if SUMMARY_MODEL:
+        summary = build_summary(domain, url_base, docs_meta)
+    else:
+        summary = _summary_skeleton(domain, url_base, docs_meta)
+        print("  (summary offload: esqueleto escrito; prosa PT gerada por hy3)", flush=True)
     (out_dir / "summary.md").write_text(summary + "\n", encoding="utf-8")
 
     # catalogo mestre
