@@ -531,7 +531,7 @@ def process(dir_path: str, limpar_raw: bool = False,
     )
 
     # summary.md
-    print("gerando summary.md via qwen3.6 (pode demorar)...", flush=True)
+    print("gerando summary.md (pode demorar)...", flush=True)
     summary = build_summary(domain, url_base, docs_meta)
     (out_dir / "summary.md").write_text(summary + "\n", encoding="utf-8")
 

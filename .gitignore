@@ -20,6 +20,9 @@ log_ola_mundo.gd
 *.log
 *.tmp
 
+# Handoff / notas de sessao (nao versionar)
+save.md
+
 # SO / editor
 Thumbs.db
 .DS_Store

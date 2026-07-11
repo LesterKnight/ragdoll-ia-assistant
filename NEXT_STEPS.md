@@ -83,7 +83,7 @@ Script único que executa a sequência **Fase A → Fase B → Fase C** num só 
 - Respeita retomada de cada fase (`process_state.json`; futuro `crawl_state.json` da item 1b).
 - Pára em erro de fase anterior (ex.: não indexa se `clean.jsonl` estiver incompleto).
 - Não cobre o **Uso** (query/programador) — esse é executado separadamente pelo usuário.
-- Reúne os passos hoje espalhados em `requisito.md` / `.opencode/agents/espiao.md` num só comando.
+- Reúne os passos hoje em `README.md` / `.opencode/agents/espiao.md` num só comando.
 
 ---
 
@@ -96,6 +96,23 @@ Usar o material do RAG para **treinar** (e não só recuperar) um modelo local:
 - Trade-off vs RAG atual: inferência mais rápida e modelo "conhece" o domínio, mas fica estático (re-treino p/ atualizar) e há risco de catastrophic forgetting. Full fine-tune de 9B não cabe em 8GB; QLoRA 4-bit em 7–9B cabe.
 - Os gaps medidos em `gaps_qwythos_gdscript.md` são os candidatos a reduzir com treino.
 - **Apenas uma possibilidade anotada — não será feito agora.**
+
+---
+
+## 9. Validação de GDScript gerado (Uso)
+
+Adicionar um passo de **checagem de sintaxe** ao código produzido pelo `programador.py`,
+antes de gravar/entregar — equivalente a um `py_compile` para GDScript:
+
+- **Nativo (Godot 4):** `godot --headless --check-only -s <arquivo>.gd` — parseia/compila e
+  sai, imprimindo erros de sintaxe sem rodar o jogo (no 4.0.x o flag é `--check_only`).
+  Ressalva: no modo CLI não resolve autoloads/singletons (falso positivo de "Identifier not found").
+- **Terceiro (`pip install gdtoolkit`):** `gdlint <arquivo>.gd` (lint: estilo + alguns erros de
+  parse) e `gdformat <arquivo>.gd` (formata).
+
+Ideia: após gerar, rodar a checagem no arquivo; só gravar/seguir se passar, e em caso de erro
+re-tentar o modelo com o erro em contexto (loop de correção). Útil porque o gerador local às
+vezes alucina API (item 5).
 
 ---
 
