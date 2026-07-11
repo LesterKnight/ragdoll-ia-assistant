@@ -407,6 +407,32 @@ def process(dir_path: str, limpar_raw: bool = False,
     total_pages = len(pages)
     errors = 0
 
+    # --- Fase B consome a SAIDA da Fase A: texto JA limpo (clean.jsonl) ---
+    # Fase A so termina apos obter os HTMLs E limpa-los; portanto a Fase B
+    # nunca relê raw/ nem executa clean_html/block_text. Se faltar texto limpo
+    # de alguma pagina, a Fase A nao concluiu e abortamos.
+    clean_path = out_dir / "clean.jsonl"
+    if not clean_path.exists():
+        print("[ERRO]: clean.jsonl ausente — Fase A (obter HTML + limpar) nao concluida.",
+              file=sys.stderr)
+        sys.exit(1)
+    clean_map = {}
+    with clean_path.open(encoding="utf-8") as fclean:
+        for line in fclean:
+            try:
+                r = json.loads(line)
+                clean_map[r["url"]] = r
+            except Exception:
+                pass
+    print(f"clean.jsonl carregado: {len(clean_map)} paginas com texto limpo", flush=True)
+    faltando = [p["url"] for p in pages if p["url"] not in clean_map]
+    if faltando:
+        print(f"[ERRO]: Fase A incompleta — {len(faltando)} pagina(s) sem texto limpo:",
+              file=sys.stderr)
+        for u in faltando[:10]:
+            print(f"  - {u}", file=sys.stderr)
+        sys.exit(1)
+
     # --- retomada (resume) ---
     if reset:
         documents_path.unlink(missing_ok=True)
@@ -445,14 +471,9 @@ def process(dir_path: str, limpar_raw: bool = False,
             if page["url"] in done:
                 continue
             print(f"[{n}/{total_pages}] processando: {page['url']}", flush=True)
-            html_file = raw_dir / page["file"]
-            if not html_file.exists():
-                errors += 1
-                continue
             try:
-                html = html_file.read_text(encoding="utf-8")
-                main = clean_html(html)
-                text = block_text(main)
+                # texto JA limpo pela Fase A (clean.jsonl) — sem reler raw/clean_html
+                text = clean_map[page["url"]].get("text", "")
                 if not text.strip():
                     done.add(page["url"]); _save_done()
                     continue
@@ -470,7 +491,9 @@ def process(dir_path: str, limpar_raw: bool = False,
                     fout.write(json.dumps(record, ensure_ascii=False) + "\n")
                 fout.flush()  # garante que a pagina foi persistida antes de marcar como feita
                 done.add(page["url"]); _save_done()
-                print(f"processado: {page['url']} -> {len(chunks)} chunks", flush=True)
+                pendentes = total_pages - len(done)
+                print(f"processado: {page['url']} -> {len(chunks)} chunks | "
+                      f"concluidas {len(done)}/{total_pages} | faltam {pendentes}", flush=True)
             except Exception as e:
                 errors += 1
                 print(f"[ERRO] {page['url']}: {e}", flush=True)

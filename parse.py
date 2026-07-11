@@ -80,8 +80,9 @@ def parse(dir_path: str, reset: bool = False):
                        "file": page["file"], "text": text}
                 fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 parsed += 1
-                if n % 100 == 0:
-                    print(f"[{n}/{total}] parseadas...", flush=True)
+                feitas = len(done) + parsed
+                print(f"parseada: {page['url']} | concluidas {feitas}/{total} | "
+                      f"faltam {total - feitas}", flush=True)
             except Exception as e:
                 print(f"[ERRO] {page['url']}: {e}", flush=True)
 

@@ -3,7 +3,7 @@
 > Status: **implementado e validado ponta a ponta** (Godot docs, escopo 2, 4 páginas, 39 chunks, 0 erros).
 
 ## Objetivo
-Construir uma base RAG de documentação. O `qwen3.6` (forte) constrói a base **offline**; o `qwen2.5-coder` **consome** em runtime, rápido, compensando sua falta de conhecimento via recuperação semântica.
+Construir uma base RAG de documentação. O `qwen3.6` (forte) constrói a base **offline**; o `qwythos9b` **consome** em runtime, rápido, compensando sua falta de conhecimento via recuperação semântica.
 
 ## Modelos
 
@@ -12,15 +12,16 @@ Construir uma base RAG de documentação. O `qwen3.6` (forte) constrói a base *
 | Chunking semântico (por página) | `gemma4` (9.6GB, ~5x mais rápido que qwen3.6) | instalado |
 | `summary.md` (1x por site) | `qwythos9b` (cabe na GPU, sem crash) | instalado |
 | Embeddings (768 dims) | `nomic-embed-text` | instalado |
-| Consumo (runtime) | `qwen2.5-coder:1.5b` | instalado |
+| Uso/Consumo (runtime) | `qwythos9b` | instalado |
 
 ## Estrutura de arquivos do projeto
 
 ```
 <raiz-do-projeto>/
-├── crawl.py                      ← Fase A (captura)
-├── process.py                    ← Fase B (processamento)
-├── query.py                      ← consumo/runtime (busca + resposta)
+├── crawl.py                      ← Fase A (captura HTML)
+├── parse.py                      ← Fase B (limpeza: HTML → clean.jsonl)
+├── process.py                    ← Fase C (indexação, consome clean.jsonl)
+├── query.py                      ← uso/consumo (busca + resposta) [fora das fases]
 ├── requirements.txt              ← dependências Python
 ├── requisito.md                  ← este documento
 ├── .opencode/agents/espiao.md    ← o agente maestro
@@ -28,11 +29,11 @@ Construir uma base RAG de documentação. O `qwen3.6` (forte) constrói a base *
     ├── index.md                  ← catálogo-mestre de todos os scraps
     └── <dominio-simplificado>/
         ├── raw/                  ← HTML renderizado (opcional após processar)
-        ├── crawl_manifest.json   ← manifesto da captura (consumido pela Fase B)
+        ├── crawl_manifest.json   ← manifesto da captura (consumido pelas Fases B e C)
         ├── documents.jsonl       ← {texto, vetor, metadados} por chunk
         ├── index.json            ← índice de docs da pasta
         ├── summary.md            ← resumo (qwythos9b, adaptativo)
-        └── process_state.json    ← progresso da Fase B (retomada)
+        └── process_state.json    ← progresso da Fase C (indexação, retomada)
 ```
 
 ## Arquivos de configuração (defaults)
@@ -69,6 +70,9 @@ Loader: `config_util.py` (lê o JSON; se ausente/inválido, cai nos defaults int
 
 ## Fase A — `crawl.py` (captura)
 
+> Fase A produz os HTMLs (`raw/` + `crawl_manifest.json`). A limpeza (Fase B) e a
+> indexação (Fase C) consomem essa saída. A limpeza NÃO pertence à Fase C.
+
 Tecnologia: **Playwright**, navegador **único**, **com tela** (headed), sessão persistente, sequencial.
 
 Uso:
@@ -98,7 +102,23 @@ Fluxo:
 - Robustez: reinício do navegador a cada 40 páginas (memória).
 - Saída em tempo real: `[URL]` / `[STATUS]: sucesso|falha` / `[ERRO]`.
 
-## Fase B — `process.py` (offline, exceto Ollama local)
+## Fase B — `parse.py` (limpeza: HTML → `clean.jsonl`)
+
+> Consome os HTMLs da Fase A e gera `clean.jsonl` (texto limpo por página). A Fase C
+> (indexação) consome **apenas** o `clean.jsonl` — nunca reparseia o `raw/`.
+
+Uso:
+```
+python parse.py --dir "RAG/<dominio-simplificado>"
+```
+
+Detalhes:
+- Remove nav/menu/footer/sidebar; preserva títulos (`#`), código (```), tabelas e Mermaid.
+- É resumível (append; pula URLs já em `clean.jsonl`).
+- A Fase A só está completa quando todo o `crawl_manifest.json` tem registro correspondente
+  em `clean.jsonl` (a Fase C aborta caso contrário).
+
+## Fase C — `process.py` (indexação, offline exceto Ollama local)
 
 Uso:
 ```
@@ -122,10 +142,10 @@ Retomada (resume) — seguro para jobs longos:
 
 Fluxo:
 ```
-para cada HTML em raw/ (SERIAL, uma página por vez; pula se já concluída):
-   1. limpa (remove nav/menu/footer/sidebar/scripts via seletores)
-   2. acha container principal (main/article/.rst-content/etc.)
-   3. extrai texto preservando: títulos (#), blocos de código (```), tabelas (markdown), Mermaid
+para cada TEXTO LIMPO em clean.jsonl (SAÍDA da Fase B; SERIAL, uma página por vez; pula se já concluída):
+   (a limpeza de HTML — nav/menu/footer/sidebar, extração de títulos/código/tabelas/Mermaid —
+    é feita na Fase B, via parse.py, e NÃO na Fase C)
+   1. chunking SEMÂNTICO via gemma4 sobre o texto já limpo:
    4. chunking SEMÂNTICO via gemma4:
         - pré-divide páginas grandes por títulos (teto ~6000 tokens por chamada)
         - cada seção vira JSON {chunks:[...]} validado
@@ -148,7 +168,7 @@ Detalhes de implementação:
 
 Estatísticas finais impressas: pasta, documentos, chunks, erros, raw removido, tempo total.
 
-## Consumo — `query.py` (runtime)
+## Uso / Consumo — `query.py` (runtime) [fora das fases]
 
 Uso:
 ```
@@ -161,7 +181,7 @@ Fluxo:
 2. escolhe a pasta: --dominio explícito, ou heurística por palavras do summary.md
 3. embedding da pergunta (nomic-embed-text)
 4. busca por cosseno no documents.jsonl (força bruta + numpy) → top-k chunks
-5. monta prompt com os chunks → qwen2.5-coder responde (em português, com fontes)
+5. monta prompt com os chunks → qwythos9b responde (em português, com fontes)
 ```
 
 ## O agente maestro (`espiao`)
@@ -197,11 +217,12 @@ Papel do agente: **só orquestrar** — perguntar, validar, disparar scripts, re
 | **Agente** | Recusar invocação inline |
 | **Agente** | Derivar `RAG/<dominio>/` da URL |
 | **Agente** | Validar entrada; disparar scripts na ordem; reportar |
-| **`crawl.py`** | Crawl a partir da URL (delay+escopo); render completo; salvar `raw/`; manifesto; árvore dedup |
-| **`process.py`** | Limpar HTML; preservar código/tabelas/títulos/Mermaid; chunking via `gemma4` (+pré-divisão+fallback); embeddings; `documents.jsonl`/`index.json`/`summary.md`; retomada (`process_state.json`); atualizar `RAG/index.md`; `--limpar-raw`; tempo total |
+| **`crawl.py`** | Fase A: Crawl a partir da URL (delay+escopo); render completo; salvar `raw/`; manifesto; árvore dedup |
+| **`parse.py`** | Fase B: limpar HTML; preservar código/tabelas/títulos/Mermaid; gerar `clean.jsonl` (resumível) |
+| **`process.py`** | Fase C: chunking semântico (`gemma4`, +pré-divisão+fallback); embeddings (`nomic-embed-text`); `documents.jsonl`/`index.json`/`summary.md`; retomada (`process_state.json`); atualizar `RAG/index.md`; `--limpar-raw`; tempo total |
 | **`gemma4` / `qwythos9b`** | Chunking semântico (gemma4) + `summary.md` (qwythos9b) |
 | **`query.py`** | Runtime: escolhe domínio → busca cosseno → prompt |
-| **`qwen2.5-coder`** | Responder usando os chunks recuperados |
+| **`qwythos9b`** | Responder usando os chunks recuperados |
 
 ## Stack / dependências
 - Python 3.12
@@ -224,6 +245,7 @@ Papel do agente: **só orquestrar** — perguntar, validar, disparar scripts, re
 2. Ou manualmente:
    ```
    python crawl.py --url "<URL>" --escopo 2 --delay 2000
+   python parse.py --dir "RAG/<dominio>"
    python process.py --dir "RAG/<dominio>"
    ```
 3. Consulta:
@@ -231,7 +253,7 @@ Papel do agente: **só orquestrar** — perguntar, validar, disparar scripts, re
    python query.py "sua pergunta"
    ```
 
-## Camada de programação (consumo do RAG para gerar código)
+## Camada de programação (uso do RAG para gerar código)
 
 Objetivo: gerar código **fundamentado na documentação** indexada. Modelo alvo: **o melhor
 que couber na GPU** (atualmente `qwythos9b` — Qwythos-9B Q4_K_M, ~6.3GB, 100% na GPU).
@@ -282,12 +304,13 @@ O **script direto** (`programador.py`) continua disponível como caminho rápido
 
 ### Correção relevante: `small_model`
 O agente oculto `title` (gera título de sessão) usava o modelo pesado e travava a GPU antes
-do trabalho começar. Corrigido com `"small_model": "ollama/qwen2.5-coder:1.5b"` na config
+do trabalho começar. Corrigido com `"small_model": "ollama/qwythos9b"` na config
 global — tarefas auxiliares (título/resumo) agora usam um modelo leve.
 
 ## Teste ponta a ponta (validado)
 - Alvo: `docs.godotengine.org` (escopo 2, delay 1500ms, limite 4)
-- Fase A: 4 páginas capturadas, 0 erros
-- Fase B: 39 chunks, 0 erros, `summary.md` + `index.md` gerados, tempo ~6m38s
+- Fase A: 4 páginas capturadas (crawl), 0 erros
+- Fase B: parse → `clean.jsonl` (4 registros)
+- Fase C: 39 chunks, 0 erros, `summary.md` + `index.md` gerados, tempo ~6m38s
 - Query "recursos de física" → resposta correta em português com fontes citadas
 - Sistema é **genérico**: funciona com qualquer site.

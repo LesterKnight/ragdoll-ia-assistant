@@ -6,7 +6,7 @@ Lista de melhorias pendentes e ideias para lembrar depois. Nada aqui está imple
 
 ## 1. Retomada — PARCIALMENTE FEITO
 
-### 1a. Retomada do processamento (Fase B) — FEITO ✅
+### 1a. Retomada do processamento (Fase C) — FEITO ✅
 `process.py` agora retoma: estado em `process_state.json` (por página), `documents.jsonl`
 em modo append, saneia chunks parciais de crash, pula páginas já feitas, `--reset` para
 recomeçar. Testado com simulação de crash.
@@ -44,7 +44,7 @@ permitir `--dominio` obrigatório quando houver ambiguidade.
 
 ---
 
-## 4. Benchmark do RAG (medir o ganho)
+## 4. Benchmark do RAG (Uso — medir o ganho)
 
 Já temos o baseline em `gaps_qwythos_gdscript.md` (conhecimento do Qwythos SEM RAG).
 
@@ -55,7 +55,7 @@ Já temos o baseline em `gaps_qwythos_gdscript.md` (conhecimento do Qwythos SEM 
 
 ---
 
-## 5. Qualidade de geração de código
+## 5. Qualidade de geração de código (Uso)
 
 **Observado:** mesmo com RAG, o gerador às vezes alucina API quando a base não tem a página
 certa (base rasa). Com a Class Reference completa, reavaliar. Considerar:
@@ -64,7 +64,7 @@ certa (base rasa). Com a Class Reference completa, reavaliar. Considerar:
 
 ---
 
-## 6. Agêntico (@programador) — confiabilidade
+## 6. Agêntico (@programador) — confiabilidade (Uso)
 
 **Observado:** o orquestrador local (Qwythos-9B) às vezes decide **não** usar o
 `code_generator` e não completa a tarefa. Funciona de forma inconsistente.
@@ -72,6 +72,30 @@ certa (base rasa). Com a Class Reference completa, reavaliar. Considerar:
 **Ideias:**
 - endurecer o prompt do agente ("SEMPRE use code_generator; SEMPRE grave o arquivo");
 - ou aceitar o script direto (`programador.py`) como caminho principal (já é o recomendado).
+
+---
+
+## 7. Orquestrador `run.py` (Fases A→B→C)
+
+Script único que executa a sequência **Fase A → Fase B → Fase C** num só ponto de entrada:
+- Ex.: `python run.py --url <URL> --escopo <N> --delay <MS>` faz captura → limpeza → indexação.
+- Parâmetros de modelo (`--chunk-model`, `--summary-model`) e de domínio repassados às fases.
+- Respeita retomada de cada fase (`process_state.json`; futuro `crawl_state.json` da item 1b).
+- Pára em erro de fase anterior (ex.: não indexa se `clean.jsonl` estiver incompleto).
+- Não cobre o **Uso** (query/programador) — esse é executado separadamente pelo usuário.
+- Reúne os passos hoje espalhados em `requisito.md` / `.opencode/agents/espiao.md` num só comando.
+
+---
+
+## 8. Fine-tuning / QLoRA no corpus limpo (possibilidade futura)
+
+Usar o material do RAG para **treinar** (e não só recuperar) um modelo local:
+- Insumo já pronto: `clean.jsonl` (corpus limpo/estruturado) e `documents.jsonl` (chunks) são o dataset de partida.
+- Modalidades: continued pre-training (injetar conhecimento do Godot nos pesos); SFT/instruction-tuning (ensinar a responder/gerar no estilo da doc); LoRA/QLoRA (adapters leves, **factível na 3060 Ti 8GB**); híbrido RAG + modelo fine-tunado.
+- Pode-se sintetizar um dataset de Q&A com o próprio RAG (ou modelo forte) a partir dos chunks — destilação de conhecimento para um modelo menor.
+- Trade-off vs RAG atual: inferência mais rápida e modelo "conhece" o domínio, mas fica estático (re-treino p/ atualizar) e há risco de catastrophic forgetting. Full fine-tune de 9B não cabe em 8GB; QLoRA 4-bit em 7–9B cabe.
+- Os gaps medidos em `gaps_qwythos_gdscript.md` são os candidatos a reduzir com treino.
+- **Apenas uma possibilidade anotada — não será feito agora.**
 
 ---
 

@@ -13,19 +13,22 @@ Tudo roda **localmente** via [Ollama](https://ollama.com), sem enviar dados para
 ## Como funciona
 
 ```
-CAPTURA            PROCESSAMENTO              CONSUMO
-(crawl.py)         (process.py)               (query.py / programador.py)
-   │                    │                             │
- navega o site   limpa + chunk + embeddings    busca semantica (cosseno)
- (Playwright)    -> documents.jsonl            -> contexto -> modelo responde/gera
+FASE A (captura)   FASE B (limpeza)   FASE C (indexação)        USO (fora das fases)
+crawl.py           parse.py            process.py                query.py / programador.py
+   │                  │                    │                          │
+ navega o site    HTML → texto limpo  chunk + embeddings →     busca semantica (cosseno)
+ (Playwright)     (clean.jsonl)       documents.jsonl          → contexto → modelo responde/gera
 ```
 
-1. **Captura** — um navegador único (Playwright) percorre o site em sequência,
-   respeitando profundidade (escopo) e delay entre requisições (anti-ban).
-2. **Processamento** — limpa o HTML, corta em chunks semânticos, gera embeddings e
-   monta a base (`documents.jsonl` + `index.json` + `summary.md`).
-3. **Consumo** — recupera os trechos mais relevantes por similaridade e entrega ao
-   modelo para responder (`query.py`) ou gerar código (`programador.py`).
+1. **Fase A — Captura** (`crawl.py`): um navegador único (Playwright) percorre o site em
+   sequência, respeitando profundidade (escopo) e delay entre requisições (anti-ban).
+   Saída: `raw/` + `crawl_manifest.json`.
+2. **Fase B — Limpeza** (`parse.py`): remove navegação/rodapé, preserva código/tabelas/
+   títulos e gera `clean.jsonl` (texto limpo por página).
+3. **Fase C — Indexação** (`process.py`): corta em chunks semânticos, gera embeddings e
+   monta a base (`documents.jsonl` + `index.json` + `summary.md` + `RAG/index.md`).
+4. **Uso / Consumo** (fora das fases): recupera os trechos mais relevantes por similaridade
+   e entrega ao modelo para responder (`query.py`) ou gerar código (`programador.py`).
 
 ---
 
@@ -34,9 +37,10 @@ CAPTURA            PROCESSAMENTO              CONSUMO
 | Arquivo | Papel |
 |---------|-------|
 | `crawl.py` | Fase A — captura das páginas |
-| `process.py` | Fase B — limpeza, chunking, embeddings, summary |
-| `query.py` | consulta em linguagem natural |
-| `programador.py` | geração de código fundamentada no RAG |
+| `parse.py` | Fase B — limpeza (HTML → clean.jsonl) |
+| `process.py` | Fase C — indexação (chunking, embeddings, summary) |
+| `query.py` | uso — consulta em linguagem natural |
+| `programador.py` | uso — geração de código fundamentada no RAG |
 | `rag_retrieve.py` | recuperação compartilhada (busca por cosseno) |
 | `config_espiao.json` | defaults de captura/processamento |
 | `config_programador.json` | defaults da geração de código |
@@ -76,6 +80,7 @@ ollama pull qwen2.5-coder:7b
 ### 1. Capturar documentação
 ```bash
 python crawl.py --url "https://docs.exemplo.com/inicio" --escopo 2 --delay 2000
+python parse.py --dir "RAG/docsexemplocom"
 python process.py --dir "RAG/docsexemplocom"
 ```
 > A pasta de saída é derivada do domínio: `RAG/<dominio-simplificado>/`.
