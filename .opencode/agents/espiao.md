@@ -51,7 +51,7 @@ obrigatorios em toda captura, mesmo que o usuario ja tenha usado antes.
 4b. (Opcional) Pergunte o limite de paginas. Se o usuario nao quiser, use 0 (sem limite).
 
 5. (Opcional) Pergunte se ele quer usar os modelos padrao ou trocar:
-   - Padrao (recomendado): chunking=gemma4 (rapido), summary=qwen3.6 (qualidade)
+    - Padrao (recomendado): chunking=qwen2.5-coder:1.5b (leve, 0% fallback), summary=offload hy3 (qualidade)
    - Se quiser trocar, mostre os modelos instalados com: ollama list
      e aceite escolhas para chunking e/ou summary.
 
@@ -70,9 +70,9 @@ obrigatorios em toda captura, mesmo que o usuario ja tenha usado antes.
    python process.py --dir "RAG/<dominio-simplificado>"
 
    Parametros opcionais de modelo (so inclua se o usuario pediu para trocar):
-   --chunk-model <modelo>     (padrao: gemma4)
-   --summary-model <modelo>   (padrao: qwen3.6)
-   Ex: python process.py --dir "RAG/<slug>" --chunk-model qwen3.6 --summary-model gemma4
+    --chunk-model <modelo>     (padrao: qwen2.5-coder:1.5b)
+    --summary-model <modelo>   (padrao: offload hy3 / None; passe um modelo para usar local)
+    Ex: python process.py --dir "RAG/<slug>" --chunk-model qwen2.5-coder:1.5b --summary-model qwythos9b
 
 7. Ao acompanhar as Fases A, B e C, mostre ao usuario apenas as linhas de status
    ([URL]/[STATUS]/[ERRO]) que os scripts imprimem. Nao explique detalhes internos.

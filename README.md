@@ -6,7 +6,7 @@ Captura a documentação de qualquer site, transforma em uma base pesquisável p
 significado e usa essa base para responder perguntas e **gerar código apoiado na
 documentação real** — compensando o desconhecimento de modelos locais menores.
 
-Tudo roda **localmente** via [Ollama](https://ollama.com), sem enviar dados para a nuvem.
+A **indexação** roda 100% local via [Ollama](https://ollama.com). O **consumo** (perguntas/código) e o **resumo** podem ser offload para o assistente hy3 (nuvem) — ver seção "Offload de síntese".
 
 > ⚡ **SEÇÃO PARA IAs LOCAIS PEQUENAS** — leia apenas até o marcador `<!-- FIM-IA -->` abaixo.
 > Assim que tiver as instruções, **PARE de ler este arquivo** e execute/retorne o que foi pedido.
@@ -253,7 +253,7 @@ Detalhes:
 ## Fase C — `process.py` (indexação)
 
 > Fase C é segura para rodar em background; salva estado **após cada página** e
-> retoma de onde parou. Trabalho pesado feito 100% por modelos locais.
+> retoma de onde parou. Chunking e embeddings rodam 100% local; o resumo é offload para o hy3.
 
 Uso:
 ```
@@ -361,7 +361,7 @@ INVOCADO
          ↓
        (opcional) pergunta limite de páginas
          ↓
-       (opcional) modelos: padrão (gemma4/qwythos9b) ou troca (mostra `ollama list`)
+        (opcional) modelos: padrão chunking=qwen2.5-coder:1.5b, summary offload hy3 (ou troca com --chunk-model/--summary-model; mostra `ollama list`)
          ↓
        confirma → dispara crawl.py → dispara process.py [--chunk-model/--summary-model]
          ↓

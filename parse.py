@@ -1,11 +1,11 @@
 """
-Fase A.5 - Parser intermediario (HTML -> texto limpo).
+Fase B - Parser (limpeza: HTML -> texto limpo).
 
 Le o HTML bruto de raw/ UMA vez, extrai apenas o conteudo util (titulos, codigo,
 tabelas, texto) e grava em clean.jsonl (compacto, ~1% do tamanho do HTML).
 
 Beneficios:
-- a Fase B (process.py) le clean.jsonl (~MBs) em vez de reparsear GBs de HTML;
+    - a Fase C (process.py) le clean.jsonl (~MBs) em vez de reparsear GBs de HTML;
 - reprocessar (trocar chunk model, etc.) fica rapido;
 - da para arquivar/apagar o raw/ e ainda reprocessar a partir do clean.jsonl.
 
@@ -98,7 +98,7 @@ def parse(dir_path: str, reset: bool = False):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Fase A.5 - parser intermediario HTML->texto")
+    ap = argparse.ArgumentParser(description="Fase B - parser (limpeza HTML->texto)")
     ap.add_argument("--dir", required=True, help="pasta RAG/<dominio-simplificado>")
     ap.add_argument("--reset", action="store_true", help="reparseia tudo do zero")
     args = ap.parse_args()

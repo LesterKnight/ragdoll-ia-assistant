@@ -1,16 +1,19 @@
 """
-Fase B - Processamento (offline, sem rede exceto Ollama local).
+Fase C - Indexacao (offline, sem rede exceto Ollama local).
 
 Uso:
     python process.py --dir RAG/<dominio-simplificado>
 
 Responsabilidades:
-- Limpa HTML (remove nav/menu/footer/sidebar)
-- Preserva codigo, tabelas, titulos, Mermaid
-- Chunking SEMANTICO via qwen3.6 (com fallback deterministico por titulo)
+- Consome clean.jsonl (texto JA limpo pela Fase B/parse.py)
+- Chunking SEMANTICO via CHUNK_MODEL (qwen2.5-coder:1.5b) com fallback deterministico
 - Gera embeddings de cada chunk (nomic-embed-text)
-- Monta documents.jsonl + index.json + summary.md
+- Monta documents.jsonl + index.json
+- summary.md: esqueleto estrutural + prosa offload para o hy3 (SUMMARY_MODEL=None)
 - Cria/atualiza RAG/index.md (catalogo-mestre)
+
+Obs: as funcoes de limpeza (clean_html/block_text) moram aqui, mas sao aplicadas
+pela Fase B (parse.py), que gera o clean.jsonl.
 """
 
 import argparse
@@ -50,7 +53,7 @@ def approx_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-NUM_CTX = None  # definido pelo config; limita o KV cache (evita crash do qwen3.6 na VRAM)
+NUM_CTX = None  # definido pelo config; limita o KV cache (evita crash do modelo na VRAM)
 
 
 def ollama_chat(prompt: str, model: str, timeout: int = 600) -> str:
@@ -58,7 +61,7 @@ def ollama_chat(prompt: str, model: str, timeout: int = 600) -> str:
     if NUM_CTX:
         options["num_ctx"] = NUM_CTX
     payload = {"model": model, "prompt": prompt, "stream": False, "options": options}
-    # qwen3.6 tem modo "thinking" (lento); desliga. Outros modelos ignoram.
+    # modelos de raciocinio (qwen3, qwythos) tem modo "thinking" (lento); desliga.
     if "qwen3" in model:
         payload["think"] = False
     r = requests.post(f"{OLLAMA}/api/generate", json=payload, timeout=timeout)
@@ -257,7 +260,7 @@ def _semantic_one(section: str, max_retries: int = 2):
 
 def chunk_semantic(text: str):
     """
-    Chunking via qwen3.6 com pre-divisao: paginas grandes sao quebradas por
+    Chunking via CHUNK_MODEL com pre-divisao: paginas grandes sao quebradas por
     titulos ANTES de irem ao modelo, garantindo chamadas pequenas e confiaveis.
     """
     if approx_tokens(text) <= MAX_TOKENS:
@@ -450,10 +453,10 @@ def process(dir_path: str, limpar_raw: bool = False,
     total_pages = len(pages)
     errors = 0
 
-    # --- Fase B consome a SAIDA da Fase A: texto JA limpo (clean.jsonl) ---
-    # Fase A so termina apos obter os HTMLs E limpa-los; portanto a Fase B
+    # --- Fase C consome a SAIDA da Fase B (parse.py): texto JA limpo (clean.jsonl) ---
+    # A Fase B so termina apos obter os HTMLs E limpa-los; portanto a Fase C
     # nunca relê raw/ nem executa clean_html/block_text. Se faltar texto limpo
-    # de alguma pagina, a Fase A nao concluiu e abortamos.
+    # de alguma pagina, a Fase B nao concluiu e abortamos.
     clean_path = out_dir / "clean.jsonl"
     if not clean_path.exists():
         print("[ERRO]: clean.jsonl ausente — Fase A (obter HTML + limpar) nao concluida.",
@@ -613,7 +616,7 @@ def main():
     from config_util import load_config
     cfg = load_config("config_espiao.json").get("process", {})
 
-    ap = argparse.ArgumentParser(description="Fase B - processamento RAG")
+    ap = argparse.ArgumentParser(description="Fase C - processamento/indexacao RAG")
     ap.add_argument("--dir", required=True, help="pasta RAG/<dominio-simplificado>")
     ap.add_argument("--limpar-raw", action="store_true",
                     help="apaga raw/ ao final se o processamento for bem-sucedido")
