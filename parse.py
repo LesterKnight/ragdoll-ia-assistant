@@ -23,21 +23,33 @@ from pathlib import Path
 
 from process import clean_html, block_text  # reusa a limpeza/extracao ja existente
 
+import loghub
+
+SITE = ""
+
+
+def L(tipo: str, msg: str):
+    if SITE:
+        loghub.log(SITE, "B", tipo, msg)
+
 
 def parse(dir_path: str, reset: bool = False):
+    global SITE
+    SITE = Path(dir_path).resolve().name
     t0 = time.perf_counter()
     out_dir = Path(dir_path).resolve()
     raw_dir = out_dir / "raw"
     manifest_file = out_dir / "crawl_manifest.json"
     clean_path = out_dir / "clean.jsonl"
 
+    L("sucesso", f"Fase B iniciada — pasta {SITE}")
     if not manifest_file.exists():
-        print(f"[ERRO]: manifesto nao encontrado em {manifest_file}", file=sys.stderr)
+        L("erro", f"manifesto nao encontrado em {manifest_file}")
         sys.exit(1)
 
     if reset:
         clean_path.unlink(missing_ok=True)
-        print("reset: clean.jsonl apagado", flush=True)
+        L("sucesso", "reset: clean.jsonl apagado; reparseando do zero")
 
     manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
     pages = manifest.get("pages", [])
@@ -52,7 +64,7 @@ def parse(dir_path: str, reset: bool = False):
             except Exception:
                 pass
     if done:
-        print(f"retomando: {len(done)} de {total} paginas ja parseadas", flush=True)
+        L("sucesso", f"retomando: {len(done)} de {total} paginas ja limpas serao puladas")
 
     raw_bytes = 0
     clean_bytes = 0
@@ -64,9 +76,11 @@ def parse(dir_path: str, reset: bool = False):
         for n, page in enumerate(pages, 1):
             if page["url"] in done:
                 continue
+            L("sucesso", f"[{n}/{total}] limpando: {page['url']}")
             html_file = raw_dir / page["file"]
             if not html_file.exists():
                 faltando += 1
+                L("erro", f"HTML bruto ausente para {page['url']} (pulando)")
                 continue
             try:
                 html = html_file.read_text(encoding="utf-8")
@@ -81,20 +95,13 @@ def parse(dir_path: str, reset: bool = False):
                 fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 parsed += 1
                 feitas = len(done) + parsed
-                print(f"parseada: {page['url']} | concluidas {feitas}/{total} | "
-                      f"faltam {total - feitas}", flush=True)
             except Exception as e:
-                print(f"[ERRO] {page['url']}: {e}", flush=True)
+                L("excecao", f"erro ao limpar {page['url']}: {e}")
 
     elapsed = time.perf_counter() - t0
-    print(f"\n[RESULTADO parse]")
-    print(f"clean.jsonl: {clean_path}")
-    print(f"paginas parseadas nesta execucao: {parsed}")
-    print(f"vazias: {vazias} | faltando raw: {faltando}")
+    L("sucesso", f"RESULTADO Fase B: {parsed} limpas | {vazias} vazias | {faltando} sem HTML | {total} total | tempo {elapsed:.1f}s")
     if raw_bytes:
-        print(f"HTML lido: {raw_bytes/1024/1024:.1f} MB -> texto: {clean_bytes/1024/1024:.1f} MB "
-              f"(reducao {100*(1-clean_bytes/raw_bytes):.1f}%)")
-    print(f"tempo: {elapsed:.1f}s")
+        pass
 
 
 def main():

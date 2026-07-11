@@ -34,24 +34,17 @@ def simplify_domain(url: str) -> str:
 
 def run_inline(script: str, args: list) -> int:
     cmd = [sys.executable, str(ROOT / script)] + args
-    print(f"\n=== {script} {' '.join(args)} ===\n", flush=True)
     return subprocess.run(cmd).returncode
 
 
 def run_background(script: str, args: list, slug: str) -> int:
     cmd = [sys.executable, str(ROOT / script)] + args
-    log = ROOT / f"process_{slug}.log"
-    with open(log, "w", encoding="utf-8") as f:
-        if os.name == "nt":
-            proc = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT,
-                                    creationflags=DETACHED)
-        else:
-            proc = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT,
-                                    start_new_session=True)
-    print(f"\n=== {script} em BACKGROUND (PID {proc.pid}) ===", flush=True)
-    print(f"log: {log}", flush=True)
-    print(f"acompanhar:  type {log}  (Windows) / tail -f {log}  (Linux)", flush=True)
-    print(f"retomar se cair:  python run.py process --dir RAG/{slug}", flush=True)
+    if os.name == "nt":
+        proc = subprocess.Popen(cmd, creationflags=DETACHED,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        proc = subprocess.Popen(cmd, start_new_session=True,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return proc.pid
 
 
@@ -70,10 +63,8 @@ def cmd_all(args: argparse.Namespace):
     slug = simplify_domain(args.url)
     d = RAG / slug
     if run_inline("crawl.py", ["--url", args.url] + crawl_opts(args)) != 0:
-        print("[run.py] Fase A falhou - abortando.", file=sys.stderr)
         sys.exit(1)
     if run_inline("parse.py", ["--dir", str(d)]) != 0:
-        print("[run.py] Fase B falhou - abortando.", file=sys.stderr)
         sys.exit(1)
     pargs = ["--dir", str(d)]
     if args.limpar_raw:
@@ -86,11 +77,9 @@ def cmd_all(args: argparse.Namespace):
         pargs.append("--reset")
     if args.foreground:
         if run_inline("process.py", pargs) != 0:
-            print("[run.py] Fase C falhou.", file=sys.stderr)
             sys.exit(1)
     else:
         run_background("process.py", pargs, slug)
-    print(f"\n[run.py] concluido ate onde foi pedido. Pasta: {d}")
 
 
 def cmd_crawl(args: argparse.Namespace):

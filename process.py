@@ -26,9 +26,22 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
+import json_repair
 from bs4 import BeautifulSoup, NavigableString
 
+import loghub
+
+# site atual (definido em process()) usado pelo LogHub
+SITE = ""
+
+
+def L(tipo: str, msg: str):
+    """Log da Fase C via LogHub (banco SQLite desacoplado)."""
+    if SITE:
+        loghub.log(SITE, "C", tipo, msg)
+
 OLLAMA = "http://localhost:11434"
+SESSION = requests.Session()  # reutiliza conexao TCP/HTTP p/ Ollama (menos overhead)
 CHUNK_MODEL = "qwen2.5-coder:1.5b"  # chunking: leve (1GB), especialista em codigo; 0% fallback nos testes
 SUMMARY_MODEL = None  # None = summary offload para hy3 (veja _summary_skeleton)
 EMBED_MODEL = "nomic-embed-text"
@@ -56,27 +69,56 @@ def approx_tokens(text: str) -> int:
 NUM_CTX = None  # definido pelo config; limita o KV cache (evita crash do modelo na VRAM)
 
 
-def ollama_chat(prompt: str, model: str, timeout: int = 600) -> str:
+def ollama_chat(prompt: str, model: str, timeout: int = 120, num_predict: int = None) -> str:
     options = {"temperature": 0.1}
     if NUM_CTX:
         options["num_ctx"] = NUM_CTX
+    if num_predict:
+        options["num_predict"] = num_predict
     payload = {"model": model, "prompt": prompt, "stream": False, "options": options}
     # modelos de raciocinio (qwen3, qwythos) tem modo "thinking" (lento); desliga.
     if "qwen3" in model:
         payload["think"] = False
-    r = requests.post(f"{OLLAMA}/api/generate", json=payload, timeout=timeout)
+    r = SESSION.post(f"{OLLAMA}/api/generate", json=payload, timeout=timeout)
     r.raise_for_status()
     return r.json().get("response", "")
 
 
 def ollama_embed(text: str, timeout: int = 120):
-    r = requests.post(
+    r = SESSION.post(
         f"{OLLAMA}/api/embeddings",
         json={"model": EMBED_MODEL, "prompt": text},
         timeout=timeout,
     )
     r.raise_for_status()
     return r.json().get("embedding", [])
+
+
+def ollama_embed_batch(texts: list, timeout: int = 120):
+    """Embeddings em lote (1 chamada). Retorna vetores alinhados a `texts`."""
+    if not texts:
+        return []
+    r = SESSION.post(
+        f"{OLLAMA}/api/embed",
+        json={"model": EMBED_MODEL, "input": texts},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    embs = r.json().get("embeddings") or r.json().get("embedding")
+    if not embs or len(embs) != len(texts):
+        raise ValueError(f"embed lote retornou {len(embs) if embs else 0} vetores p/ {len(texts)} textos")
+    return embs
+
+
+def embed_chunks(chunks: list, timeout: int = 120):
+    """Embeddings de uma pagina: lote (1 chamada) com retry e fallback por chunk."""
+    for attempt in range(2):
+        try:
+            return ollama_embed_batch(chunks, timeout=timeout)
+        except Exception as e:
+            L("erro", f"embed lote falhou tentativa {attempt + 1}: {e}")
+    L("erro", "embed lote esgotou tentativas -> fallback por chunk")
+    return [ollama_embed(c, timeout=timeout) for c in chunks]
 
 
 # ------------------------- limpeza HTML -------------------------
@@ -209,8 +251,11 @@ MODEL_INPUT_TOKENS = 6000  # teto por chamada ao modelo (mantem inferencia rapid
 
 
 def _sanitize_for_json(s: str) -> str:
-    """Remove caracteres de controle invalidos em JSON (mantem \\t \\n \\r)."""
-    return "".join(ch if (ord(ch) >= 0x20 or ch in "\t\n\r") else " " for ch in s)
+    """Remove caracteres de controle invalidos em JSON e corrige virgulas trailing."""
+    s = "".join(ch if (ord(ch) >= 0x20 or ch in "\t\n\r") else " " for ch in s)
+    # modelo as vezes emite virgulas trailing antes de } ou ]: {"a":1,} / [1,2,]
+    s = re.sub(r",\s*([}\]])", r"\1", s)
+    return s
 
 
 def _parse_chunks(resp: str, section: str):
@@ -227,7 +272,7 @@ def _parse_chunks(resp: str, section: str):
     return chunks
 
 
-def _semantic_one(section: str, max_retries: int = 2):
+def _semantic_one(section: str, max_retries: int = 2, depth: int = 0):
     """Segmenta UMA secao via modelo, com sanitizacao + retry antes do fallback."""
     if approx_tokens(section) <= MAX_TOKENS:
         return [section]
@@ -247,15 +292,56 @@ def _semantic_one(section: str, max_retries: int = 2):
                       "Responda APENAS o objeto JSON, sem caracteres de controle e "
                       "sem texto antes/depois.\n\n" + base_prompt)
         try:
-            resp = ollama_chat(prompt, CHUNK_MODEL)
+            resp = ollama_chat(prompt, CHUNK_MODEL, num_predict=4096)
             resp = _sanitize_for_json(resp)
+            if depth > 0:
+                L("sucesso", "chunking semantico recuperado via re-divisao (pedaco menor)")
             return _parse_chunks(resp, section)
         except Exception as e:
             last_err = e
-            print(f"  (chunking semantico tentativa {attempt + 1} falhou: {e})", flush=True)
-    print(f"  (chunking semantico esgotou tentativas: {last_err} -> fallback deterministico)",
-          flush=True)
-    return chunk_by_headings(section)
+    L("erro", f"chunking semantico esgotou tentativas: {last_err} -> re-dividindo por cabecalhos")
+    return _fallback_split(section, depth)
+
+
+def _fallback_split(section: str, depth: int = 0):
+    """
+    Fallback prudente: a falha semantica geralmente e de tamanho. Re-divide a
+    secao pelos blocos de cabecalho e RE-TENTA o chunking semantico em cada
+    pedaco menor. So degrada para corte deterministico (chunk_by_headings) quando
+    um pedaco nao tem cabecalhos/paragrafos internos e ainda assim falha.
+    """
+    if depth >= 3:
+        L("erro", "fallback deterministico (profundidade maxima atingida)")
+        return chunk_by_headings(section)
+
+    # tenta dividir por cabecalhos (menor unidade semantica)
+    parts = re.split(r"(?=^#{1,6}\s)", section, flags=re.MULTILINE)
+    parts = [p.strip() for p in parts if p.strip()]
+    if len(parts) > 1:
+        L("erro", f"fallback: re-dividindo em {len(parts)} blocos de cabecalho e re-tentando modelo")
+    if len(parts) <= 1:
+        # sem sub-cabecalhos: divide por paragrafos e tenta de novo
+        paras = _split_large(section)
+        if len(paras) > 1:
+            L("erro", f"fallback: bloco sem sub-cabecalhos, dividindo em {len(paras)} paragrafos e re-tentando modelo")
+        if len(paras) <= 1:
+            L("erro", "sem sub-cabecalhos/paragrafos -> corte deterministico final")
+            return chunk_by_headings(section)
+        out = []
+        for p in paras:
+            if approx_tokens(p) <= MAX_TOKENS:
+                out.append(p)
+            else:
+                out.extend(_semantic_one(p, depth=depth + 1))
+        return _apply_overlap(out)
+
+    out = []
+    for p in parts:
+        if approx_tokens(p) <= MAX_TOKENS:
+            out.append(p)
+        else:
+            out.extend(_semantic_one(p, depth=depth + 1))
+    return _apply_overlap(out)
 
 
 def chunk_semantic(text: str):
@@ -310,7 +396,13 @@ def _extract_json(s: str):
         elif c == "}":
             depth -= 1
             if depth == 0:
-                return json.loads(s[start:i + 1], strict=False)
+                candidate = s[start:i + 1]
+                try:
+                    return json.loads(candidate, strict=False)
+                except json.JSONDecodeError:
+                    # reparo robusto p/ JSON de LLM malformado (virgulas faltando/
+                    # extras, aspas/quebras nao escapadas, etc.) — qualidade > fallback
+                    return json_repair.loads(candidate)
     raise ValueError("JSON nao balanceado na resposta")
 
 
@@ -423,15 +515,17 @@ def update_master_index(rag_root: Path):
 
 def process(dir_path: str, limpar_raw: bool = False,
             chunk_model: str = None, summary_model: str = None, num_ctx: int = None,
-            reset: bool = False):
-    global CHUNK_MODEL, SUMMARY_MODEL, NUM_CTX
+            reset: bool = False, limit: int = None):
+    global CHUNK_MODEL, SUMMARY_MODEL, NUM_CTX, SITE
+    SITE = Path(dir_path).resolve().name
     if chunk_model:
         CHUNK_MODEL = chunk_model
     if summary_model:
         SUMMARY_MODEL = summary_model
     if num_ctx:
         NUM_CTX = num_ctx
-    print(f"modelos: chunking={CHUNK_MODEL} | summary={SUMMARY_MODEL} | num_ctx={NUM_CTX}", flush=True)
+
+    L("sucesso", f"modelos: chunking={CHUNK_MODEL} | summary={SUMMARY_MODEL} | num_ctx={NUM_CTX}")
 
     t_inicio = time.perf_counter()
     out_dir = Path(dir_path).resolve()
@@ -439,7 +533,7 @@ def process(dir_path: str, limpar_raw: bool = False,
     manifest_file = out_dir / "crawl_manifest.json"
 
     if not manifest_file.exists():
-        print(f"[ERRO]: manifesto nao encontrado em {manifest_file}", file=sys.stderr)
+        L("erro", f"manifesto nao encontrado em {manifest_file}")
         sys.exit(1)
 
     manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
@@ -459,8 +553,7 @@ def process(dir_path: str, limpar_raw: bool = False,
     # de alguma pagina, a Fase B nao concluiu e abortamos.
     clean_path = out_dir / "clean.jsonl"
     if not clean_path.exists():
-        print("[ERRO]: clean.jsonl ausente — Fase A (obter HTML + limpar) nao concluida.",
-              file=sys.stderr)
+        L("erro", "clean.jsonl ausente — Fase B (limpeza) nao concluida.")
         sys.exit(1)
     clean_map = {}
     with clean_path.open(encoding="utf-8") as fclean:
@@ -470,20 +563,17 @@ def process(dir_path: str, limpar_raw: bool = False,
                 clean_map[r["url"]] = r
             except Exception:
                 pass
-    print(f"clean.jsonl carregado: {len(clean_map)} paginas com texto limpo", flush=True)
+    L("sucesso", f"clean.jsonl carregado: {len(clean_map)} paginas com texto limpo")
     faltando = [p["url"] for p in pages if p["url"] not in clean_map]
     if faltando:
-        print(f"[ERRO]: Fase A incompleta — {len(faltando)} pagina(s) sem texto limpo:",
-              file=sys.stderr)
-        for u in faltando[:10]:
-            print(f"  - {u}", file=sys.stderr)
+        L("erro", f"Fase B incompleta — {len(faltando)} pagina(s) sem texto limpo: {faltando[:3]}")
         sys.exit(1)
 
     # --- retomada (resume) ---
     if reset:
         documents_path.unlink(missing_ok=True)
         state_path.unlink(missing_ok=True)
-        print("reset: documents.jsonl e estado apagados; processando do zero", flush=True)
+        L("sucesso", "reset: documents.jsonl e estado apagados; processando do zero")
 
     done = set()
     if state_path.exists():
@@ -505,28 +595,32 @@ def process(dir_path: str, limpar_raw: bool = False,
         documents_path.write_text(("\n".join(kept) + "\n") if kept else "", encoding="utf-8")
 
     if done:
-        print(f"retomando: {len(done)} de {total_pages} paginas ja feitas serao puladas", flush=True)
+        L("sucesso", f"retomando: {len(done)} de {total_pages} paginas ja feitas serao puladas")
 
     def _save_done():
         state_path.write_text(json.dumps({"done": sorted(done)}, ensure_ascii=False),
                               encoding="utf-8")
 
     # modo append: nunca trunca o que ja foi processado
+    processados = 0
     with documents_path.open("a", encoding="utf-8") as fout:
         for n, page in enumerate(pages, 1):
             if page["url"] in done:
                 continue
-            print(f"[{n}/{total_pages}] processando: {page['url']}", flush=True)
+            L("sucesso", f"[{n}/{total_pages}] processando: {page['url']}")
             try:
                 # texto JA limpo pela Fase A (clean.jsonl) — sem reler raw/clean_html
                 text = clean_map[page["url"]].get("text", "")
                 if not text.strip():
                     done.add(page["url"]); _save_done()
+                    processados += 1
+                    if limit and processados >= limit:
+                        break
                     continue
 
                 chunks = chunk_semantic(text)
-                for order, chunk in enumerate(chunks):
-                    vector = ollama_embed(chunk)
+                vectors = embed_chunks(chunks)
+                for order, (chunk, vector) in enumerate(zip(chunks, vectors)):
                     record = {
                         "text": chunk,
                         "vector": vector,
@@ -535,14 +629,16 @@ def process(dir_path: str, limpar_raw: bool = False,
                         "order": order,
                     }
                     fout.write(json.dumps(record, ensure_ascii=False) + "\n")
-                fout.flush()  # garante que a pagina foi persistida antes de marcar como feita
+                fout.flush()  # grava a pagina inteira antes de marcar como feita
                 done.add(page["url"]); _save_done()
+                processados += 1
                 pendentes = total_pages - len(done)
-                print(f"processado: {page['url']} -> {len(chunks)} chunks | "
-                      f"concluidas {len(done)}/{total_pages} | faltam {pendentes}", flush=True)
+                L("sucesso", f"processado: {page['url']} -> {len(chunks)} chunks | concluidas {len(done)}/{total_pages} | faltam {pendentes}")
+                if limit and processados >= limit:
+                    break
             except Exception as e:
                 errors += 1
-                print(f"[ERRO] {page['url']}: {e}", flush=True)
+                L("excecao", f"erro ao processar {page['url']}: {e}")
 
     # --- finaliza: reconstroi docs_meta e contagem a partir do arquivo COMPLETO ---
     docs_meta = []
@@ -577,12 +673,12 @@ def process(dir_path: str, limpar_raw: bool = False,
     )
 
     # summary.md (offload para hy3 quando SUMMARY_MODEL=None)
-    print("gerando summary.md...", flush=True)
+    L("sucesso", "gerando summary.md...")
     if SUMMARY_MODEL:
         summary = build_summary(domain, url_base, docs_meta)
     else:
         summary = _summary_skeleton(domain, url_base, docs_meta)
-        print("  (summary offload: esqueleto escrito; prosa PT gerada por hy3)", flush=True)
+        L("sucesso", "summary offload: esqueleto escrito; prosa PT gerada por hy3")
     (out_dir / "summary.md").write_text(summary + "\n", encoding="utf-8")
 
     # catalogo mestre
@@ -595,21 +691,15 @@ def process(dir_path: str, limpar_raw: bool = False,
             import shutil
             shutil.rmtree(raw_dir, ignore_errors=True)
             raw_removido = True
-            print("raw/ removido (--limpar-raw, processamento sem erros)", flush=True)
+            L("sucesso", "raw/ removido (--limpar-raw, processamento sem erros)")
         else:
-            print("raw/ mantido: houve erros ou nenhum chunk gerado", flush=True)
+            L("sucesso", "raw/ mantido: houve erros ou nenhum chunk gerado")
 
     elapsed = time.perf_counter() - t_inicio
     m, s = divmod(int(elapsed), 60)
     tempo_str = f"{m}m {s}s" if m else f"{s}s"
+    L("sucesso", f"RESULTADO: documentos={len(docs_meta)} chunks={total_chunks} erros={errors} tempo={tempo_str}")
 
-    print(f"\n[RESULTADO]")
-    print(f"pasta: {out_dir}")
-    print(f"documentos: {len(docs_meta)}")
-    print(f"chunks: {total_chunks}")
-    print(f"erros: {errors}")
-    print(f"raw removido: {'sim' if raw_removido else 'nao'}")
-    print(f"tempo total: {tempo_str} ({elapsed:.1f}s)")
 
 
 def main():
@@ -628,9 +718,11 @@ def main():
                     help=f"limite de contexto (default config: {cfg.get('num_ctx')})")
     ap.add_argument("--reset", action="store_true",
                     help="ignora progresso salvo e reprocessa tudo do zero")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="processa no maximo N paginas (teste)")
     args = ap.parse_args()
     process(args.dir, args.limpar_raw, args.chunk_model, args.summary_model,
-            args.num_ctx, args.reset)
+            args.num_ctx, args.reset, args.limit)
 
 
 if __name__ == "__main__":

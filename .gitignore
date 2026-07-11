@@ -19,6 +19,7 @@ log_ola_mundo.gd
 /tmp/
 *.log
 *.tmp
+*.out
 
 # Handoff / notas de sessao (nao versionar)
 save.md

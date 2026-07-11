@@ -116,6 +116,27 @@ vezes alucina API (item 5).
 
 ---
 
+## 10. Unificar logs das 3 fases em uma classe de logging + publicação eficiente no webserver
+
+**Problema:** hoje o logging é avulso — Fase A (`crawl.py`) e Fase B (`parse.py`) não têm
+acompanhamento (rodaram e terminaram), e a Fase C (`process.py`) só é monitorada via
+`tee -a fasec_run.log | python ts.py >> fasec_monitor.log`, lendo o arquivo no `monitor.py`
+por polling (re-lê as últimas linhas a cada refresh). Não há carimbo de fase e o webserver
+só enxerga a Fase C.
+
+**Melhoria:** criar uma classe de logging central (ex.: `loghub.py` / `LogHub`) usada pelas
+3 fases (A, B, C), que:
+- carimba **timestamp (fuso America/Sao_Paulo)** e a **fase de origem** em cada registro;
+- grava no arquivo de log por fase (preserva histórico, mantém `fasec_run.log` etc.);
+- **publica no webserver de forma eficiente** — em vez de polling/re-leitura de arquivo a
+  cada refresh, empurra os registros (socket/pipe, ou buffer circular em memória que o
+  `monitor.py` consome) com nível/struct; o monitor exibe A/B/C ao vivo num só lugar.
+
+**Benefício:** monitor único acompanha as 3 fases sem pipes manuais (`tee`+`ts.py`), com
+carimbo consistente e publicação leve (sem re-processar arquivo inteiro a cada 2 s).
+
+---
+
 ## Notas
 - Base RAG (`RAG/`) não é versionada (`.gitignore`) — é regenerável.
 - Scrap atual em andamento: `docs.godotengine.org/en/stable/` escopo 3.

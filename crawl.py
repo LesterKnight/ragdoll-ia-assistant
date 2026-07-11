@@ -26,6 +26,15 @@ from urllib.parse import urljoin, urlparse, urldefrag
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
+import loghub
+
+SITE = ""
+
+
+def L(tipo: str, msg: str):
+    if SITE:
+        loghub.log(SITE, "A", tipo, msg)
+
 
 # ------------------------- Normalizacao -------------------------
 
@@ -106,17 +115,19 @@ def extract_links(html: str, current_url: str, base_host: str, prefix: str):
 def crawl(url: str, escopo: int, delay_ms: int, limite: int,
           nav_timeout: int = 30000, idle_timeout: int = 15000,
           prefixo: str = None, restart_every: int = 40):
+    global SITE
     base_host = base_host_of(url)
     domain_slug = simplify_domain(url)
+    SITE = domain_slug
     project_root = Path(__file__).resolve().parent
     out_dir = project_root / "RAG" / domain_slug
     raw_dir = out_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
+    L("sucesso", f"Fase A iniciada — {SITE} | url={url} | escopo={escopo} | delay={delay_ms}ms")
 
     start = normalize_url(url)
     delay_s = max(0, delay_ms) / 1000.0
     prefix = prefixo or default_prefix(url)
-    print(f"[prefixo]: seguindo apenas links sob {prefix}", flush=True)
 
     manifest = []
     errors = []
@@ -129,6 +140,7 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int,
 
         def restart_browser():
             nonlocal browser, page, pages_since_restart
+            L("sucesso", "reiniciando navegador (ciclo de estabilidade)")
             page.close()
             browser.close()
             browser = p.chromium.launch(headless=False)
@@ -140,6 +152,7 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int,
 
         while queue:
             if limite and len(manifest) >= limite:
+                L("sucesso", f"limite de {limite} paginas atingido")
                 break
             current, depth = queue.popleft()
             current = normalize_url(current)
@@ -152,7 +165,7 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int,
                 try:
                     page.wait_for_load_state("networkidle", timeout=idle_timeout)
                 except PWTimeout:
-                    pass  # render pesado; segue com o que tem
+                    L("erro", f"networkidle timeout em {current} (render pesado); seguindo")
                 html = page.content()
                 title = page.title()
                 real_url = page.url  # URL real apos redirecionamentos (base correta p/ links relativos)
@@ -160,8 +173,7 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int,
                 fname = url_to_filename(current)
                 (raw_dir / fname).write_text(html, encoding="utf-8")
                 manifest.append({"url": current, "file": fname, "title": title, "depth": depth})
-                print(f"[URL]: {current}")
-                print(f"[STATUS]: sucesso")
+                L("sucesso", f"capturado [{len(manifest)}]: {current}")
 
                 # descobre links da pagina se ainda houver profundidade no escopo
                 if depth < escopo:
@@ -171,9 +183,7 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int,
 
             except Exception as e:
                 errors.append({"url": current, "error": str(e)})
-                print(f"[URL]: {current}")
-                print(f"[STATUS]: falha")
-                print(f"[ERRO]: {e}")
+                L("excecao", f"erro ao capturar {current}: {e}")
 
             pages_since_restart += 1
             if pages_since_restart >= restart_every:
@@ -202,11 +212,8 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int,
     (out_dir / "crawl_manifest.json").write_text(
         json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    L("sucesso", f"RESULTADO Fase A: {len(manifest)} capturadas | {len(errors)} erros | escopo={escopo} | prefixo={prefix}")
 
-    print(f"\n[RESULTADO]")
-    print(f"pasta: {out_dir}")
-    print(f"paginas: {len(manifest)}")
-    print(f"erros: {len(errors)}")
     return manifest_data
 
 
@@ -231,7 +238,6 @@ def main():
     args = ap.parse_args()
 
     if not args.url.startswith(("http://", "https://")):
-        print("[ERRO]: URL deve iniciar com http:// ou https://", file=sys.stderr)
         sys.exit(1)
 
     crawl(args.url, args.escopo, args.delay, args.limite,

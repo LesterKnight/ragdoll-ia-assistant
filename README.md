@@ -17,6 +17,7 @@ A **indexação** roda 100% local via [Ollama](https://ollama.com). O **consumo*
 Orquestrador (recomendado — a lógica fica no script, não no modelo):
 - `python run.py all --url "<URL>" --escopo 2 --delay 2000` → Fase A→B→C (Fase C em background)
 - `python run.py process --dir RAG/<dominio>` → retoma só a Fase C se o job cair
+  - Exemplo real: `python run.py process --dir RAG/docsgodotengineorg` retoma a indexação do Godot docs
 - flags: `--foreground` (rodar no terminal), `--limpar-raw`, `--chunk-model`, `--summary-model`, `--reset`
 
 Comandos diretos (um por fase):
