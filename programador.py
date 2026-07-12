@@ -9,7 +9,7 @@ Fluxo:
 1. reescreve a tarefa em termos de busca (com fallback para a tarefa direta)
 2. recupera top-k trechos da doc via rag_retrieve
 3. monta prompt de codigo (usa SOMENTE os trechos)
- 4. modelo de geracao (default qwythos9b, offload local de sintese) gera o codigo
+ 4. modelo de geracao (default qwen2.5-coder:7b, offload local de sintese) gera o codigo
 5. imprime no stdout (e grava em --out se informado)
 
 Nao orquestra nada: pipeline fixo. Toda decisao agentica fica no agente que o chama.
@@ -24,7 +24,7 @@ import requests
 import rag_retrieve
 
 OLLAMA = "http://localhost:11434"
-GEN_MODEL = "qwythos9b"
+GEN_MODEL = "qwen2.5-coder:7b"
 
 
 def _is_reasoning_model(model: str) -> bool:
@@ -32,9 +32,10 @@ def _is_reasoning_model(model: str) -> bool:
     return "qwen3" in m or "qwythos" in m
 
 
-def ollama_chat(prompt: str, model: str, temperature: float = 0.2, timeout: int = 600) -> str:
+def ollama_chat(prompt: str, model: str, temperature: float = 0.2,
+                num_predict: int = 600, timeout: int = 600) -> str:
     payload = {"model": model, "prompt": prompt, "stream": False,
-               "options": {"temperature": temperature}}
+               "options": {"temperature": temperature, "num_predict": num_predict}}
     if _is_reasoning_model(model):
         payload["think"] = False  # desliga cadeia de raciocinio (mais rapido, saida direta)
     r = requests.post(f"{OLLAMA}/api/generate", json=payload, timeout=timeout)
@@ -58,8 +59,9 @@ def rewrite_query(tarefa: str, model: str) -> str:
         return tarefa
 
 
-def gerar(tarefa: str, dominio: str = None, topk: int = 5, model: str = GEN_MODEL,
-          contexto: str = "", idioma: str = "pt", reescrever: bool = False):
+def gerar(tarefa: str, dominio: str = None, topk: int = 15, model: str = GEN_MODEL,
+          contexto: str = "", idioma: str = "pt", reescrever: bool = False,
+          temperature: float = 0.2, num_predict: int = 600):
     query = rewrite_query(tarefa, model) if reescrever else tarefa
 
     try:
@@ -84,7 +86,7 @@ def gerar(tarefa: str, dominio: str = None, topk: int = 5, model: str = GEN_MODE
         f"TAREFA: {tarefa}\n\nCODIGO:"
     )
 
-    resp = ollama_chat(prompt, model)
+    resp = ollama_chat(prompt, model, temperature=temperature, num_predict=num_predict)
     saida = resp.strip()
 
     print(f"[dominio]: {dominio} | [modelo]: {model} | [query]: {query}", file=sys.stderr)
@@ -125,7 +127,7 @@ def main():
     ap = argparse.ArgumentParser(description="Gerador de codigo fundamentado no RAG")
     ap.add_argument("tarefa")
     ap.add_argument("--dominio", default=cfg.get("dominio"), help="pasta do dominio (default: auto)")
-    ap.add_argument("--topk", type=int, default=cfg.get("topk", 5))
+    ap.add_argument("--topk", type=int, default=cfg.get("topk", 15))
     ap.add_argument("--model", default=gen_default,
                     help=f"modelo de geracao (default config: {gen_default})")
     ap.add_argument("--contexto", default="", help="codigo existente para dar contexto")

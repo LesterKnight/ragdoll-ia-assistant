@@ -14,7 +14,7 @@ Como se mede "contexto" (generico, nao-Godot):
     (bônus: se a resposta mesma assim contiver `term`, o modelo ja sabia
      de treino — raro para APIs novas.)
 
-Sem "qwen": sintese roda com qwythos9b.
+Sintese roda com qwen2.5-coder:7b (sem qwen3/gemma/qwythos).
 
 Uso:
   python stage_d/etapa_d.py
@@ -34,7 +34,7 @@ import requests
 import rag_retrieve
 
 OLLAMA = "http://localhost:11434"
-DEFAULT_MODEL = "qwythos9b"
+DEFAULT_MODEL = "qwen2.5-coder:7b"
 STOP = {"node", "godot", "object", "resource", "engine", "script", "method",
         "function", "class", "signal", "property", "vector", "transform",
         "godotengine", "index", "doc", "docs", "page", "main", "introduction",
@@ -109,7 +109,7 @@ def main():
     domain = (input("Dominio [docsgodotengineorg]: ").strip() or "docsgodotengineorg")
     model = (input(f"Modelo [{DEFAULT_MODEL}]: ").strip() or DEFAULT_MODEL)
     try:
-        topk = int(input("Top-k [5]: ").strip() or 5)
+        topk = int(input("Top-k [15]: ").strip() or 15)
     except Exception:
         topk = 5
 
@@ -135,6 +135,7 @@ def main():
         )
 
         # --- COM RAG ---
+        print(f"  [{i:02d}/{n}] RAG: recuperando contexto...", flush=True)
         try:
             _, chunks = rag_retrieve.retrieve_chunks(question, domain, topk)
             relevant = any(term in (c["texto"] + c["url"]).lower() for c in chunks)
@@ -156,6 +157,7 @@ def main():
         r = "SIM" if relevant else "NAO"
 
         # --- SEM RAG ---
+        print(f"  [{i:02d}/{n}] SEM-RAG: gerando resposta...", flush=True)
         norag_prompt = f"{question}\n\nRESPOSTA:"
         norag_ans = ask_model(norag_prompt, model)
         norag_usou = term in norag_ans.lower()

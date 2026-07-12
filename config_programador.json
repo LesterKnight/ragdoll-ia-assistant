@@ -1,6 +1,6 @@
 {
-  "model": "qwythos9b",
-  "topk": 5,
+  "model": "qwen2.5-coder:7b",
+  "topk": 15,
   "idioma": "pt",
   "dominio": null,
   "reescrever": false

@@ -11,7 +11,7 @@ E generica: nao assume Godot nem nenhuma linguagem. Tudo vem de parametro:
   --validator comando shell com {file} no lugar do caminho (exit 0 = valido)
   --tasks     JSON com a lista de tarefas: [{q, expect[], legacy[]}]
 
-Sem "qwen": sintese roda com qwythos9b (offload local).
+Sintese roda com qwen2.5-coder:7b (sem qwen3/gemma/qwythos).
 Se --validator for omitido, so a metrica de CONHECIMENTO e computada.
 
 Uso (a partir da raiz do repo):
@@ -37,17 +37,17 @@ import requests
 import programador
 
 OLLAMA = "http://localhost:11434"
-DEFAULT_MODEL = "qwythos9b"
+DEFAULT_MODEL = "qwen2.5-coder:7b"
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_TASKS = os.path.join(HERE, "tasks_godot.json")
 BENCHDIR = r"C:/Users/kiko2/AppData/Local/Temp/opencode/bench"
 
 
-def bare_gen(prompt: str, model: str, num_predict: int = 600) -> str:
+def bare_gen(prompt: str, model: str, num_predict: int = 600, temperature: float = 0.2) -> str:
     r = requests.post(
         f"{OLLAMA}/api/generate",
         json={"model": model, "prompt": prompt, "stream": False,
-              "options": {"temperature": 0.2, "num_predict": num_predict}},
+              "options": {"temperature": temperature, "num_predict": num_predict}},
         timeout=600,
     )
     r.raise_for_status()
@@ -80,6 +80,24 @@ def score(out: str, expect, legacy):
     return (len(has) >= 1, has, wrong)
 
 
+def _pass(val, kw):
+    """pass/fail geral: validade se houver validador, senao acerto de conhecimento."""
+    return bool(val) if val is not None else bool(kw)
+
+
+def append_record(jsonl_f, run_meta, n, q, dt, rag_ok, rag_vd, rag_err,
+                  norag_ok, norag_vd, norag_err):
+    """Grava UMA linha JSONL por pergunta (append-only, incremental)."""
+    rec = dict(run_meta)
+    rec.update({
+        "n": n, "q": q, "time_s": dt,
+        "rag": {"pass": _pass(rag_vd, rag_ok), "kw": rag_ok, "val": rag_vd, "err": rag_err},
+        "norag": {"pass": _pass(norag_vd, norag_ok), "kw": norag_ok, "val": norag_vd, "err": norag_err},
+    })
+    jsonl_f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    jsonl_f.flush()
+
+
 def main():
     ap = argparse.ArgumentParser(description="Etapa D — benchmark RAG x PURO (generico)")
     ap.add_argument("--domain", default="docsgodotengineorg")
@@ -88,7 +106,10 @@ def main():
     ap.add_argument("--validator", default="", help="comando com {file}; exit 0 = valido")
     ap.add_argument("--tasks", default=DEFAULT_TASKS, help="JSON [{q, expect[], legacy[]}]")
     ap.add_argument("--model", default=DEFAULT_MODEL)
-    ap.add_argument("--topk", type=int, default=5)
+    ap.add_argument("--topk", type=int, default=15)
+    ap.add_argument("--num_predict", type=int, default=600, help="limite de tokens da geracao")
+    ap.add_argument("--temperature", type=float, default=0.2, help="temperatura da geracao")
+    ap.add_argument("--note", default="", help="anotacao livre (ex.: quant, variant, etc.)")
     ap.add_argument("--limit", type=int, default=0, help="roda so N tarefas")
     args = ap.parse_args()
 
@@ -97,27 +118,49 @@ def main():
         tasks = tasks[:args.limit]
 
     os.makedirs(BENCHDIR, exist_ok=True)
-    manifest_path = os.path.join(BENCHDIR, "manifest.json")
+    safe = args.model.replace(":", "_").replace("/", "_")
+    manifest_path = os.path.join(BENCHDIR, f"manifest_{safe}.json")
     results = []
     done = set()
     if os.path.exists(manifest_path):
         try:
-            results = json.load(open(manifest_path, encoding="utf-8"))
-            done = {r["n"] for r in results}
-            print(f"[retomando] {len(done)}/{len(tasks)} ja feitas", flush=True)
+            loaded = json.load(open(manifest_path, encoding="utf-8"))
+            if isinstance(loaded, list) and all(
+                    isinstance(r, dict) and "val_rag" in r for r in loaded):
+                results = loaded
+                done = {r["n"] for r in results}
+                print(f"[retomando] {len(done)}/{len(tasks)} ja feitas", flush=True)
+            else:
+                print("[manifest incompativel] ignorando resultados anteriores", flush=True)
         except Exception:
             results = []
     t0 = time.time()
+    run_meta = {
+        "domain": args.domain,
+        "model": args.model,
+        "lang": args.lang,
+        "ext": args.ext,
+        "validator": bool(args.validator),
+        "topk": args.topk,
+        "num_predict": args.num_predict,
+        "temperature": args.temperature,
+        "note": args.note,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    jsonl_path = os.path.join(HERE, "benchmark_results.jsonl")
+    jsonl_f = open(jsonl_path, "a", encoding="utf-8")
 
     for i, t in enumerate(tasks, 1):
         if i in done:
             print(f"[{i:02d}] (ja feita, pulando)", flush=True)
             continue
         print(f"[{i:02d}/{len(tasks)}] {t['q'][:62]}...", flush=True)
+        t_task = time.time()
 
         # --- COM RAG ---
         rag_out, _ = programador.gerar(t["q"], args.domain, topk=args.topk,
-                                       model=args.model, idioma="pt", reescrever=False)
+                                       model=args.model, idioma="pt", reescrever=False,
+                                       temperature=args.temperature, num_predict=args.num_predict)
         rag_code = programador.extrair_codigo(rag_out)
         rag_path = os.path.join(BENCHDIR, f"rag_{i:02d}.{args.ext}")
         open(rag_path, "w", encoding="utf-8").write(rag_code + "\n")
@@ -130,7 +173,8 @@ def main():
             "Comente em portugues. Responda com o codigo.\n\n"
             f"TAREFA: {t['q']}\n\nCODIGO:"
         )
-        norag_out = bare_gen(prompt, args.model)
+        norag_out = bare_gen(prompt, args.model, num_predict=args.num_predict,
+                             temperature=args.temperature)
         norag_code = programador.extrair_codigo(norag_out)
         norag_path = os.path.join(BENCHDIR, f"norag_{i:02d}.{args.ext}")
         open(norag_path, "w", encoding="utf-8").write(norag_code + "\n")
@@ -146,8 +190,11 @@ def main():
             "rag_path": rag_path, "norag_path": norag_path,
         })
         json.dump(results, open(manifest_path, "w"), ensure_ascii=False, indent=2)
+        dt = round(time.time() - t_task, 1)
+        append_record(jsonl_f, run_meta, i, t["q"], dt,
+                      rag_ok, rag_vd, rag_err, norag_ok, norag_vd, norag_err)
         fmt = lambda b, e: ("OK" if b else "FAIL") + (f" ({e[:48]})" if (e and not b) else "")
-        print(f"   RAG : kw={rag_ok}({','.join(rag_hit)}) val={fmt(rag_vd, rag_err) if rag_vd is not None else 'n/a'}", flush=True)
+        print(f"   RAG : kw={rag_ok}({','.join(rag_hit)}) val={fmt(rag_vd, rag_err) if rag_vd is not None else 'n/a'}  [{dt}s]", flush=True)
         print(f"   PURO: kw={norag_ok}({','.join(norag_hit)}) val={fmt(norag_vd, norag_err) if norag_vd is not None else 'n/a'}", flush=True)
 
     total = len(results)
@@ -172,6 +219,8 @@ def main():
             print(f"Ganho absoluto do RAG (validade): +{val_rag}/{len(vals)} tarefas validas")
     print("=" * 72)
     print(f"Arquivos: {BENCHDIR}")
+    jsonl_f.close()
+    print(f"Resultados JSONL (1 linha/pergunta, incremental): {jsonl_path}")
 
 
 if __name__ == "__main__":

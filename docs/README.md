@@ -76,6 +76,32 @@ crawl.py           parse.py            process.py                query.py /     
 
 ---
 
+## Três momentos distintos (treinamento × uso × avaliação)
+
+O projeto tem **três momentos isolados**; o loop de gerar→QA só existe em um deles.
+
+1. **Treinamento (Fases A/B/C) — construção da base.** `crawl.py` → `parse.py` →
+   `process.py` apenas capturam, limpam e indexam (chunk + embeddings + resumo).
+   **Não geram nem verificam código** e **nunca** acionam o agente `programador`
+   nem o QA. O chunking usa `qwen2.5-coder:1.5b`; o resumo é offload para o hy3.
+   Tudo vive em `RAG/` (gitignored).
+
+2. **Uso / Consumo — geração para o usuário.** `programador.py` (+ `code_generator`)
+   recupera trechos do RAG e gera código com `qwen2.5-coder:7b`. **Aqui** vale o
+   fluxo gerar → **QA** (`qa.md`, que confere contra o RAG e roda o validador) →
+   **só entrega ao usuário se PASS**. Falhando, regenera em loop. É o único lugar
+   do loop de verificação.
+
+3. **Etapa D — Avaliação (isolada em `stage_d/`).** `benchmark.py` / agente `qa`
+   comparam RAG × SEM-RAG e medem validade (compilador do usuário). É desvinculada
+   do core e do consumo: não indexa e não entrega código ao usuário.
+
+> O QA com RAG é usado tanto no **Uso** (filtrar o código entregue) quanto na
+> **Etapa D** (avaliar o ganho do RAG). Em nenhum dos dois ele participa do
+> **Treinamento**.
+
+---
+
 ## Componentes
 
 | Arquivo | Papel |
