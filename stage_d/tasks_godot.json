@@ -1,0 +1,22 @@
+[
+  {"q": "Crie um script que adiciona uma camada de tiles e desenha um tile na posicao (3,4) da grade, usando a API de tiles da versao mais recente do Godot.",
+   "expect": ["TileMapLayer"], "legacy": ["create_tile", "TileMap("]},
+  {"q": "Crie um AudioStream que toque uma lista de musicas em sequencia, uma apos a outra, sem cortar o audio entre elas.",
+   "expect": ["AudioStreamPlaylist"], "legacy": ["AudioStreamPlayer"]},
+  {"q": "Crie um AudioStream que sincronize dois audios (voz + musica) para tocarem perfeitamente alinhados no mesmo playback.",
+   "expect": ["AudioStreamSynchronized"], "legacy": ["AudioStreamPlayer"]},
+  {"q": "Crie um efeito de pos-processamento personalizado via shader que roda na passada de composicao da camera.",
+   "expect": ["CompositorEffect"], "legacy": ["VisualServer", "WorldEnvironment"]},
+  {"q": "Crie um modificador que aplica fisica a um Skeleton3D fazendo os ossos reagirem a colisoes, usando a classe de modificador esqueleto.",
+   "expect": ["SkeletonModifier3D"], "legacy": ["SkeletonIK", "BoneAttachment"]},
+  {"q": "Crie uma textura de gradiente 2D configuravel por pontos, usando a classe de textura de gradiente 2D nova.",
+   "expect": ["GradientTexture2D"], "legacy": ["GradientTexture("]},
+  {"q": "Crie um obstaculo de navegacao que agentes evitam em runtime, usando a classe de obstaculo de navegacao 2D.",
+   "expect": ["NavigationObstacle2D"], "legacy": ["NavigationMesh", "navmesh"]},
+  {"q": "Crie um loop que processa tarefas pesadas em varias threads usando o pool de threads do engine, sem criar Threads manuais.",
+   "expect": ["WorkerThreadPool"], "legacy": ["Thread.new", "OS.threads"]},
+  {"q": "Crie um sistema multiplayer que instancia automaticamente uma cena para cada novo peer conectado, usando o node spawner.",
+   "expect": ["MultiplayerSpawner"], "legacy": ["rpc(", "instance_child"]},
+  {"q": "Crie um node que emite sinal quando um objeto 3D entra ou sai da area visivel da camera.",
+   "expect": ["VisibleOnScreenNotifier3D"], "legacy": ["VisibilityNotifier", "VisibilityEnabler"]}
+]

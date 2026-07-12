@@ -57,7 +57,7 @@ crawl.py           parse.py            process.py                query.py /     
   navega o site    HTML → texto limpo  chunk + embeddings →     busca semantica      compara RAG x PURO
   (Playwright)     (clean.jsonl)       documents.jsonl          (cosseno) → modelo   + valida no Godot
                                             │                    responde/gera              │
-                                            └──── base RAG ───────┘  ◄──────────────── gdtester (agente)
+                                            └──── base RAG ───────┘  ◄──────────────── qa (agente de avaliacao)
 ```
 
 > **Core (A/B/C) = ler websites + treinamento/indexação.** O consumo
@@ -92,7 +92,7 @@ crawl.py           parse.py            process.py                query.py /     
 | `config_programador.json` | defaults da geração de código |
 | `.opencode/agents/espiao.md` | agente orquestrador de captura |
 | `.opencode/agents/programador.md` | agente de programação (consumer) |
-| `.opencode/agents/gdtester.md` | **Etapa D** — validador de GDScript (compila no Godot) |
+| `.opencode/agents/qa.md` | **Etapa D** — agente de QA: compara RAG x PURO e valida c/ compilador do usuario (generico) |
 | `.opencode/tools/code_generator.ts` | expõe o gerador como ferramenta |
 
 ---
@@ -148,8 +148,11 @@ Ganho: a GPU local passa a rodar só `qwen2.5-coder:1.5b` (chunk, 1GB) + `nomic-
 ├── requirements.txt              ← dependências Python
 ├── config_espiao.json            ← defaults de captura/processamento
 ├── config_programador.json       ← defaults da geração de código
-├── README.md                     ← este documento (fonte única)
-├── NEXT_STEPS.md                 ← próximos passos e ideias
+├── docs/                          ← documentação centralizada
+│   ├── README.md                  ← este documento (fonte única)
+│   ├── NEXT_STEPS.md              ← próximos passos e ideias
+│   ├── gaps_qwythos_gdscript.md   ← baseline Qwythos SEM RAG (análise)
+│   └── stage_d.md                 ← documentação da Etapa D
 ├── .opencode/agents/espiao.md    ← o agente maestro (orquestração)
 ├── .opencode/agents/programador.md ← agente de programação
 ├── .opencode/tools/code_generator.ts ← custom tool que expõe o gerador
@@ -354,16 +357,20 @@ Orquestração agêntica (`@programador`) — **funciona** com `qwythos9b`:
 
 ---
 
-## Etapa D — Avaliação (isolada em `stage_d/`)
+## Etapa D — Avaliação (isolada em `stage_d/`, **genérica / não-Godot**)
 
 Não faz parte do core (A/B/C). Mede o ganho do RAG comparando o `programador`
-(com recuperação) contra o modelo de síntese **puro** (sem RAG) e valida o
-GDScript gerado compilando-o no Godot real (método do agente `gdtester`).
+(com recuperação) contra o modelo de síntese **puro** (sem RAG) e valida a saída
+com o **compilador/checador que o usuário informar** (Godot, `py_compile`, `tsc`,
+JSON, etc.). Não assume nenhuma linguagem.
 
-- Script: `stage_d/benchmark.py` (incremental/resumível; roda `python stage_d/benchmark.py`).
-- Validação: `godot --headless --check-only --script <arquivo>` (Godot 4.6.3 fixo no `gdtester.md`).
-- Resultado da última rodada (10 tarefas, APIs novas do Godot 4.3+): RAG compila **40%**
-  vs PURO **0%**; acerto de conhecimento 50% vs 30%. Sem nenhum modelo "qwen".
+- Agente: `.opencode/agents/qa.md` (pergunta linguagem/validador/tarefas e sempre
+  compara RAG x PURO, obtendo métricas de conhecimento + validade).
+- Script: `stage_d/benchmark.py` (genérico, incremental/resumível; roda
+  `python stage_d/benchmark.py --domain <dom> --lang <L> --ext <ext> --validator "<cmd {file}>" --tasks <tarefas.json>`).
+- Exemplo (Godot): RAG compila **40%** vs PURO **0%**; acerto de conhecimento 50% vs 30%.
+  Sem nenhum modelo "qwen" (síntese = `qwythos9b`). Troque `--tasks`/`--validator`
+  para avaliar qualquer domínio/indexação.
 
 ## Agente maestro (`espiao`)
 

@@ -46,7 +46,7 @@ permitir `--dominio` obrigatório quando houver ambiguidade.
 
 ## 4. Benchmark do RAG (Uso — medir o ganho)
 
-Já temos o baseline em `gaps_qwythos_gdscript.md` (conhecimento do Qwythos SEM RAG).
+Já temos o baseline em `docs/gaps_qwythos_gdscript.md` (conhecimento do Qwythos SEM RAG).
 
 **A fazer depois do scrap total:**
 - repetir as perguntas Q1–Q5 (+ expandir) COM RAG (`programador.py ... --fontes`);
@@ -83,7 +83,7 @@ Script único que executa a sequência **Fase A → Fase B → Fase C** num só 
 - Respeita retomada de cada fase (`process_state.json`; futuro `crawl_state.json` da item 1b).
 - Pára em erro de fase anterior (ex.: não indexa se `clean.jsonl` estiver incompleto).
 - Não cobre o **Uso** (query/programador) — esse é executado separadamente pelo usuário.
-- Reúne os passos hoje em `README.md` / `.opencode/agents/espiao.md` num só comando.
+- Reúne os passos hoje em `docs/README.md` / `.opencode/agents/espiao.md` num só comando.
 
 ---
 
@@ -94,7 +94,7 @@ Usar o material do RAG para **treinar** (e não só recuperar) um modelo local:
 - Modalidades: continued pre-training (injetar conhecimento do Godot nos pesos); SFT/instruction-tuning (ensinar a responder/gerar no estilo da doc); LoRA/QLoRA (adapters leves, **factível na 3060 Ti 8GB**); híbrido RAG + modelo fine-tunado.
 - Pode-se sintetizar um dataset de Q&A com o próprio RAG (ou modelo forte) a partir dos chunks — destilação de conhecimento para um modelo menor.
 - Trade-off vs RAG atual: inferência mais rápida e modelo "conhece" o domínio, mas fica estático (re-treino p/ atualizar) e há risco de catastrophic forgetting. Full fine-tune de 9B não cabe em 8GB; QLoRA 4-bit em 7–9B cabe.
-- Os gaps medidos em `gaps_qwythos_gdscript.md` são os candidatos a reduzir com treino.
+- Os gaps medidos em `docs/gaps_qwythos_gdscript.md` são os candidatos a reduzir com treino.
 - **Apenas uma possibilidade anotada — não será feito agora.**
 
 ---
