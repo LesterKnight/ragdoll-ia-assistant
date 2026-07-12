@@ -9,7 +9,7 @@ Fluxo:
 1. reescreve a tarefa em termos de busca (com fallback para a tarefa direta)
 2. recupera top-k trechos da doc via rag_retrieve
 3. monta prompt de codigo (usa SOMENTE os trechos)
-4. modelo de geracao (default qwen2.5-coder:7b) gera o codigo
+ 4. modelo de geracao (default qwen2.5-coder:1.5b, cabe na GPU) gera o codigo
 5. imprime no stdout (e grava em --out se informado)
 
 Nao orquestra nada: pipeline fixo. Toda decisao agentica fica no agente que o chama.
@@ -24,7 +24,7 @@ import requests
 import rag_retrieve
 
 OLLAMA = "http://localhost:11434"
-GEN_MODEL = "qwythos9b"
+GEN_MODEL = "qwen2.5-coder:1.5b"
 
 
 def _is_reasoning_model(model: str) -> bool:

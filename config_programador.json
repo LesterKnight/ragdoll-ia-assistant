@@ -1,5 +1,5 @@
 {
-  "model": "qwythos9b",
+  "model": "qwen2.5-coder:1.5b",
   "topk": 5,
   "idioma": "pt",
   "dominio": null,

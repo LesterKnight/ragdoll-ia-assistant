@@ -4,7 +4,7 @@ Consumo / runtime - responde perguntas usando a base RAG.
 Uso:
     python query.py "sua pergunta"                  # escolhe a pasta automaticamente
     python query.py "sua pergunta" --dominio docsgodotengineorg
-    python query.py "sua pergunta" --topk 5 --model qwythos9b
+    python query.py "sua pergunta" --topk 5 --model qwen2.5-coder:1.5b
 
 Fluxo:
 1. rag_retrieve escolhe o dominio e recupera top-k chunks (cosseno)
@@ -19,7 +19,7 @@ import requests
 import rag_retrieve
 
 OLLAMA = "http://localhost:11434"
-ANSWER_MODEL = "qwythos9b"
+ANSWER_MODEL = "qwen2.5-coder:1.5b"
 
 
 def ollama_chat(prompt: str, model: str, timeout: int = 300) -> str:
