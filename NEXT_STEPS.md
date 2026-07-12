@@ -137,6 +137,34 @@ carimbo consistente e publicação leve (sem re-processar arquivo inteiro a cada
 
 ---
 
+## 11. Monitor — progresso por página e ETA
+
+**Problema:** O progresso exibido na página web do monitor (~400) está divergindo do real
+(~512 páginas concluídas). Suspeita: o snapshot (últimas 500 linhas) perde linhas de
+`processado:` quando há muitos logs de subdivisão de páginas grandes, distorcendo o
+cálculo. Além disso, a `updateProgress()` conta toda linha que contém "concluidas X/Y"
+no texto, mas o snapshot pode não conter todas elas.
+
+**Melhorias:**
+
+1. **Progresso por página (não por chunk):** buscar o contador `concluidas` da última
+   linha `processado:` no snapshot. Mas, em vez de depender do texto do snapshot (que
+   pode estar truncado), fazer uma query SQL direta ao `log.db` para obter o último
+   valor de `concluidas` — ou ler o `process_state.json` diretamente (fonte da verdade)
+   e exibi-lo na página.
+
+2. **ETA baseado no tempo entre páginas:** calcular o ritmo (páginas/min) a partir dos
+   timestamps das últimas N linhas `processado:` e projetar o tempo restante:
+   `(total - concluidas) / ritmo`. Exibir no painel ao lado do progresso.
+
+3. **Página só conta quando finaliza:** garantir que `processado:` só seja logado após
+   a conclusão de **todos** os chunks da página (já é o caso no `process.py`, mas
+   verificar se logs de subdivisão (fallback, recuperação) criam a ilusão de múltiplos
+   avanços). Ideal: um único `processado:` por página, independentemente de quantas
+   subdivisões ocorreram.
+
+---
+
 ## Notas
 - Base RAG (`RAG/`) não é versionada (`.gitignore`) — é regenerável.
 - Scrap atual em andamento: `docs.godotengine.org/en/stable/` escopo 3.
