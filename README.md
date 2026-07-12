@@ -51,12 +51,18 @@ conhecimento via recuperação semântica.
 ## Como funciona
 
 ```
-FASE A (captura)   FASE B (limpeza)   FASE C (indexação)        USO (fora das fases)
-crawl.py           parse.py            process.py                query.py / programador.py
-   │                  │                    │                          │
- navega o site    HTML → texto limpo  chunk + embeddings →     busca semantica (cosseno)
- (Playwright)     (clean.jsonl)       documents.jsonl          → contexto → modelo responde/gera
+FASE A (captura)   FASE B (limpeza)   FASE C (treinamento)      USO (consumo)        ETAPA D (avaliacao)
+crawl.py           parse.py            process.py                query.py /          stage_d/benchmark.py
+   │                  │                    │                       programador.py          │
+  navega o site    HTML → texto limpo  chunk + embeddings →     busca semantica      compara RAG x PURO
+  (Playwright)     (clean.jsonl)       documents.jsonl          (cosseno) → modelo   + valida no Godot
+                                            │                    responde/gera              │
+                                            └──── base RAG ───────┘  ◄──────────────── gdtester (agente)
 ```
+
+> **Core (A/B/C) = ler websites + treinamento/indexação.** O consumo
+> (`query.py`/`programador.py`) usa a base; a **Etapa D** (`stage_d/`) é a
+> avaliação isolada — não polui o core e só depende de `programador.py` + Godot.
 
 1. **Fase A — Captura** (`crawl.py`): um navegador único (Playwright) percorre o site em
    sequência, respeitando profundidade (escopo) e delay entre requisições (anti-ban).
@@ -81,10 +87,12 @@ crawl.py           parse.py            process.py                query.py / prog
 | `query.py` | uso — consulta em linguagem natural |
 | `programador.py` | uso — geração de código fundamentada no RAG |
 | `rag_retrieve.py` | recuperação compartilhada (busca por cosseno) |
+| `stage_d/benchmark.py` | **Etapa D** — avaliação: RAG x PURO + validação no Godot (isolada do core) |
 | `config_espiao.json` | defaults de captura/processamento |
 | `config_programador.json` | defaults da geração de código |
 | `.opencode/agents/espiao.md` | agente orquestrador de captura |
-| `.opencode/agents/programador.md` | agente de programação |
+| `.opencode/agents/programador.md` | agente de programação (consumer) |
+| `.opencode/agents/gdtester.md` | **Etapa D** — validador de GDScript (compila no Godot) |
 | `.opencode/tools/code_generator.ts` | expõe o gerador como ferramenta |
 
 ---
@@ -345,6 +353,17 @@ Orquestração agêntica (`@programador`) — **funciona** com `qwythos9b`:
 - O **script direto** (`programador.py`) continua disponível como caminho rápido e sem orquestração.
 
 ---
+
+## Etapa D — Avaliação (isolada em `stage_d/`)
+
+Não faz parte do core (A/B/C). Mede o ganho do RAG comparando o `programador`
+(com recuperação) contra o modelo de síntese **puro** (sem RAG) e valida o
+GDScript gerado compilando-o no Godot real (método do agente `gdtester`).
+
+- Script: `stage_d/benchmark.py` (incremental/resumível; roda `python stage_d/benchmark.py`).
+- Validação: `godot --headless --check-only --script <arquivo>` (Godot 4.6.3 fixo no `gdtester.md`).
+- Resultado da última rodada (10 tarefas, APIs novas do Godot 4.3+): RAG compila **40%**
+  vs PURO **0%**; acerto de conhecimento 50% vs 30%. Sem nenhum modelo "qwen".
 
 ## Agente maestro (`espiao`)
 
