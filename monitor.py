@@ -86,6 +86,8 @@ async def handler(websocket):
         return
     snap = recent(site, 500)
     last_id = snap[-1]["id"] if snap else 0
+    prog = site_progress(site)
+    await websocket.send(json.dumps(prog))
     await websocket.send(json.dumps({"type": "snapshot", "rows": snap}))
     try:
         while True:
@@ -110,6 +112,61 @@ def _autosite():
         return ""
 
 
+def site_progress(site: str) -> dict:
+    """Retorna progresso real (process_state.json) + ETA."""
+    state_path = BASE / "RAG" / site / "process_state.json"
+    done = 0
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            done = len(state.get("done", []))
+        except Exception:
+            pass
+    total = done or 1
+    manifest_path = BASE / "RAG" / site / "crawl_manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            total = len(manifest.get("pages", []))
+        except Exception:
+            pass
+    elif (BASE / "RAG" / site / "clean.jsonl").exists():
+        try:
+            total = sum(1 for _ in (BASE / "RAG" / site / "clean.jsonl").open(encoding="utf-8"))
+        except Exception:
+            pass
+
+    eta = ""
+    if done > 0 and done < total:
+        try:
+            c = sqlite3.connect(str(DB))
+            rows = c.execute(
+                "SELECT data_hora FROM log WHERE site=? AND log LIKE '%processado%' ORDER BY id DESC LIMIT 20",
+                (site,),
+            ).fetchall()
+            c.close()
+            if len(rows) >= 2:
+                times = sorted(
+                    datetime.strptime(r[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    for r in rows
+                )
+                span = (times[-1] - times[0]).total_seconds()
+                rate = (len(times) - 1) / span  # pages/sec
+                remaining = (total - done) / rate if rate > 0 else 0
+                h, r = divmod(int(remaining), 3600)
+                m, s = divmod(r, 60)
+                if h:
+                    eta = f"{h}h {m}m"
+                elif m:
+                    eta = f"{m}m {s}s"
+                else:
+                    eta = f"{s}s"
+        except Exception:
+            pass
+
+    return {"done": done, "total": total, "eta": eta, "type": "progress"}
+
+
 HTML = """<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>ragdoll — log ao vivo (WebSocket)</title>
 <style>
@@ -122,7 +179,7 @@ HTML = """<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 </style></head><body>
 <h2>ragdoll — log ao vivo <span id="status" class="muted">conectando…</span></h2>
 <div>Site: <span class="k" id="site">__SITE__</span></div>
-<div>Progresso: <span class="k" id="done">?</span> / <span class="k" id="total">?</span> <span class="k" id="pct"></span></div>
+ <div>Progresso: <span class="k" id="done">?</span> / <span class="k" id="total">?</span> <span class="k" id="pct"></span>  ETA: <span class="k" id="eta"></span></div>
 <div class="bar"><div class="fill" id="fill"></div></div>
 <div>Fallbacks: <span class="e" id="fb">0</span></div>
 <h3 class="muted">Log (SQLite → WebSocket)</h3>
@@ -139,13 +196,15 @@ ws.onopen = function(){
 };
 ws.onmessage = function(e){
   const msg = JSON.parse(e.data);
-  if (msg.type === 'snapshot'){
+  if (msg.type === 'progress'){
+    setProgress(msg.done, msg.total, msg.eta);
+  } else if (msg.type === 'snapshot'){
     pre.textContent = '';
     msg.rows.forEach(appendRow);
-    updateProgress();
+    countFallbacks();
   } else if (msg.type === 'event'){
     appendRow(msg.row);
-    updateProgress();
+    countFallbacks();
   }
 };
 ws.onerror = function(){ statusEl.textContent = 'erro no WebSocket'; };
@@ -156,17 +215,15 @@ function appendRow(r){
   pre.textContent += line;
   pre.scrollTop = pre.scrollHeight;
 }
-function updateProgress(){
-  const m = pre.textContent.match(/concluidas (\\d+)\\/(\\d+)/g);
-  if(m){
-    const last = m[m.length-1].match(/(\\d+)\\/(\\d+)/);
-    const done = +last[1], total = +last[2];
-    document.getElementById('done').textContent = done;
-    document.getElementById('total').textContent = total;
-    const pct = total ? Math.round(100*done/total) : 0;
-    document.getElementById('pct').textContent = pct + '%';
-    document.getElementById('fill').style.width = pct + '%';
-  }
+function setProgress(done, total, eta){
+  document.getElementById('done').textContent = done;
+  document.getElementById('total').textContent = total;
+  const pct = total ? Math.round(100*done/total) : 0;
+  document.getElementById('pct').textContent = pct + '%';
+  document.getElementById('fill').style.width = pct + '%';
+  document.getElementById('eta').textContent = eta || '';
+}
+function countFallbacks(){
   document.getElementById('fb').textContent = (pre.textContent.match(/fallback deterministico/g) || []).length;
 }
 </script>

@@ -619,6 +619,10 @@ def process(dir_path: str, limpar_raw: bool = False,
                     continue
 
                 chunks = chunk_semantic(text)
+                if not chunks:
+                    L("erro", f"chunking vazio para {page['url']} — pagina NAO marcada como concluida (sera retentada)")
+                    errors += 1
+                    continue
                 vectors = embed_chunks(chunks)
                 for order, (chunk, vector) in enumerate(zip(chunks, vectors)):
                     record = {
