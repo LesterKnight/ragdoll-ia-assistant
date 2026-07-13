@@ -155,7 +155,7 @@ __TABS__
  <section id="p-home" class="show">
   <div class="card">
    <h2>Log ao vivo</h2>
-   <div class="note">Fonte: SQLite (RAG/log.db) → WebSocket. Fallbacks determinísticos (<span id="fb-site">—</span>): <b id="fb" style="color:var(--warn)">0</b></div>
+   <div class="note">Fonte: SQLite (RAG/log.db) → WebSocket. Fallbacks determinísticos (<span class="fb-site">—</span>): <b id="fb" style="color:var(--warn)">0</b></div>
    <div class="log" id="log"><span class="empty-note">ainda não há itens</span></div>
   </div>
  </section>
