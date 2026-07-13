@@ -113,10 +113,14 @@ O projeto tem **três momentos isolados**; o loop de gerar→QA só existe em um
 | `query.py` | uso — consulta em linguagem natural |
 | `programador.py` | uso — geração de código fundamentada no RAG |
 | `rag_retrieve.py` | recuperação compartilhada (busca por cosseno) |
-| `stage_d/benchmark.py` | **Etapa D** — avaliação: RAG x PURO + validação no Godot (isolada do core) |
-| `config_espiao.json` | defaults de captura/processamento |
-| `config_programador.json` | defaults da geração de código |
-| `.opencode/agents/espiao.md` | agente orquestrador de captura |
+| `stage_d/benchmark.py` | **Etapa D** — avaliação: RAG x PURO (modos `code`/`facts`, isolada do core) |
+| `config.json` | **configuração central** (defaults seguros) — única fonte lida por todos os scripts |
+| `config_util.py` | loader + `SCHEMA` (campos editáveis na UI) + validação do `config.json` |
+| `server.py` | **frontend web**: HTTP `:8765` + WebSocket `:8766` (JSON API + monitor em tempo real) |
+| `templates.py` | HTML/JS do dashboard (abas Coleta/Limpeza/Indexação/Avaliação/Configurações) |
+| `loghub.py` | grava log estruturado (write-only) das etapas A/B/C/D |
+| `logdb.py` | leitura do log (read-only): status por base, histórico, `wipe_all()` |
+| `.opencode/agents/extrator.md` | agente extrator de dados (captura) |
 | `.opencode/agents/programador.md` | agente de programação (consumer) |
 | `.opencode/agents/qa.md` | **Etapa D** — agente de QA: compara RAG x PURO e valida c/ compilador do usuario (generico) |
 | `.opencode/tools/code_generator.ts` | expõe o gerador como ferramenta |
@@ -171,15 +175,20 @@ Ganho: a GPU local passa a rodar só `qwen2.5-coder:1.5b` (chunk, 1GB) + `nomic-
 ├── query.py                      ← uso/consumo (busca + resposta) [fora das fases]
 ├── programador.py                ← uso/consumo (geração de código) [fora das fases]
 ├── rag_retrieve.py               ← recuperação semântica compartilhada
+├── run.py                        ← orquestrador (A→B→C + retomada)
+├── config.json                   ← configuração central (defaults) — fonte única
+├── config_util.py                ← loader + SCHEMA + validação do config
+├── server.py                     ← frontend web: HTTP :8765 + WebSocket :8766
+├── templates.py                  ← HTML/JS do dashboard (abas + Configurações + wipe)
+├── loghub.py                     ← grava log estruturado das etapas (write-only)
+├── logdb.py                      ← leitura do log + wipe_all() (read-only)
 ├── requirements.txt              ← dependências Python
-├── config_espiao.json            ← defaults de captura/processamento
-├── config_programador.json       ← defaults da geração de código
 ├── docs/                          ← documentação centralizada
 │   ├── README.md                  ← este documento (fonte única)
 │   ├── NEXT_STEPS.md              ← próximos passos e ideias
 │   ├── gaps_qwythos_gdscript.md   ← baseline Qwythos SEM RAG (análise)
 │   └── stage_d.md                 ← documentação da Etapa D
-├── .opencode/agents/espiao.md    ← o agente maestro (orquestração)
+├── .opencode/agents/extrator.md  ← o agente extrator de dados (orquestração)
 ├── .opencode/agents/programador.md ← agente de programação
 ├── .opencode/tools/code_generator.ts ← custom tool que expõe o gerador
 └── RAG/
@@ -196,30 +205,49 @@ Ganho: a GPU local passa a rodar só `qwen2.5-coder:1.5b` (chunk, 1GB) + `nomic-
 
 ---
 
-## Arquivos de configuração (defaults)
+## Configuração central (`config.json` + `config_util.py`)
 
-Dois JSON na raiz definem os defaults dos agentes. Precedência:
-**CLI > arquivo de config > default interno**.
+Há um **único** arquivo de config na raiz: `config.json`. Os defaults antigos
+(Os dois configs antigos — captura e programador — foram **unificados** aqui.)
+Precedência: **CLI > `config.json` > default interno**.
 
-`config_espiao.json` (captura + processamento):
+O `config_util.py` é a fonte única de verdade:
+- `DEFAULTS` — valores de fábrica;
+- `SCHEMA` — lista de campos; cada um tem `group`, `label`, `type`, `ui`
+  (True = aparece e é editável na aba **Configurações** da UI; `ui:False` =
+  existe no JSON mas **não** é exposto na UI, ex.: `ollama.embed_model`, que
+  quebraria a compatibilidade dos vetores se trocado);
+- `load_config()` / `save_config()` / `validate_and_apply(payload)` — o
+  `POST /api/config` só aceita caminhos com `ui:True` (qualquer outro retorna
+  `campo nao editavel pela UI`).
+
+Exemplo de `config.json`:
 ```json
 {
-  "crawl":   { "escopo": 2, "delay_ms": 2000, "limite": 0 },
-  "process": { "chunk_model": "qwen2.5-coder:1.5b", "summary_model": null, "num_ctx": 16384 }
+  "ollama":      { "url": "http://localhost:11434", "embed_model": "nomic-embed-text" },
+  "crawl":       { "escopo": 2, "delay_ms": 2000, "limite": 0, "nav_timeout": 30000, "idle_timeout": 15000 },
+  "process":     { "chunk_model": "qwen2.5-coder:1.5b", "summary_model": null, "num_ctx": 16384 },
+  "query":       { "model": "qwen2.5-coder:1.5b", "topk": 5 },
+  "programador": { "model": "qwen2.5-coder:7b", "topk": 15, "idioma": "pt", "reescrever": false },
+  "benchmark":   { "model": "qwen2.5-coder:7b", "topk": 15, "num_predict": 600, "temperature": 0.2,
+                   "mode": "code", "lang": "GDScript", "ext": "gd", "tasks": "stage_d/tasks_godot.json" }
 }
 ```
-- `num_ctx` limita o KV cache do modelo (evita crash do modelo de raciocínio na VRAM de 8GB).
 
-`config_programador.json` (geração de código):
-```json
-{ "model": "qwythos9b", "topk": 5, "idioma": "pt", "dominio": null, "reescrever": false }
-```
-- `model` = modelo usado por `programador.py` (arg `--model` sobrescreve).
-- O modelo do **orquestrador** (agente `@programador`) fica no próprio
-  `.opencode/agents/programador.md` (trocável ali). Alvo: usar o melhor modelo que
-  couber na GPU nos dois papéis (atualmente `qwythos9b`, unificado).
+### Parâmetros por rodada (NÃO são config fixa)
+Alguns parâmetros do benchmark são **ajustáveis a cada rodada**, não settings
+globais fixos — escolhidos no painel da aba **Avaliação** (e também via CLI):
+- `benchmark.mode` → `code` (gera código vs PURO) ou `facts` (recupera passagens
+  de uma base não-código — ex.: um livro — vs PURO, medindo *recall*);
+- `benchmark.lang` / `benchmark.ext` → só fazem sentido no modo `code` (rótulo e
+  extensão do arquivo gerado);
+- `benchmark.tasks` → caminho do JSON de tarefas daquela rodada.
 
-Loader: `config_util.py` (lê o JSON; se ausente/inválido, cai nos defaults internos).
+Esses campos continuam no `config.json` apenas como **defaults internos** (o
+servidor os usa quando a UI não os envia) e foram **removidos do `SCHEMA`**, então
+não aparecem nem são editáveis na aba Configurações.
+
+Loader: `config_util.py` (lê o JSON; se ausente/inválido, cai nos `DEFAULTS`).
 
 ---
 
@@ -383,6 +411,60 @@ Orquestração agêntica (`@programador`) — **funciona** com `qwythos9b`:
 
 ---
 
+## Frontend web (monitor + uso)
+
+`server.py` + `templates.py` formam um dashboard local que **substituiu o monitor
+antigo** (100% real, sem mock): ele lê o log estruturado (`logdb.py`) das fases
+A/B/C e da Etapa D, e dispara as ações (coleta, limpeza, indexação, query,
+programador, benchmark) via uma **JSON API + WebSocket**.
+
+- **Portas**: HTTP `:8765` e WebSocket `:8766` (HTTP+1).
+- **Auto-detecção de base**: `logdb._autosite()` escolhe a base mais recente se
+  nenhuma for informada; para fixar, rode `python server.py --site <slug>` ou
+  acesse `/rag/<slug>`.
+
+### Abas
+1. **Coleta (A)** — formulário (URL/escopo/delay/limite) que dispara `crawl.py`
+   via `run_detached`; mostra progresso e páginas capturadas em tempo real.
+2. **Limpeza (B)** — dispara `parse.py`; barra de progresso.
+3. **Indexação (C)** — dispara `process.py`; barra de progresso + ETA.
+4. **Avaliação (D)** — gráficos do benchmark (tempo por teste, quem venceu,
+   pizza RAG×PURO) + **painel por rodada**: `Modo` (code/facts), `Linguagem`,
+   `Extensão` e `Arquivo de tarefas`.
+5. **Configurações** — renderiza o `SCHEMA` do `config.json` agrupado; salva via
+   `POST /api/config` (validado). Campos `ui:False` (ex.: `embed_model`) não
+   aparecem. Botão **Salvar**.
+6. **Uso** — aba de consulta (`query.py`) e geração (`programador.py`) com o RAG.
+
+### Log em tempo real (WebSocket)
+`/ws/<slug>` envia eventos `{etapa, log, ts}` conforme `loghub.py` grava. O
+`applyStageGating` libera as abas na ordem A→B→C→D (remove o `locked` ao avançar)
+— corrigido para também tirar o bloqueio quando a etapa sobe.
+
+### Endpoints (JSON API)
+| Método | Rota | Papel |
+|--------|------|-------|
+| GET | `/api/status` | status de todas as bases (etapa, execução, domínio) |
+| GET | `/api/bases` | lista de bases (slug, domínio, etapa, situação) |
+| POST | `/api/run` | dispara uma fase (`{acao, dominio, ...params}`) |
+| GET | `/api/query?q=` | consulta em linguagem natural (RAG) |
+| POST | `/api/programador` | gera código fundamentado (`{tarefa, dominio, ...}`) |
+| POST | `/api/bench` | dispara benchmark (`{dominio, mode, lang, ext, tasks, ...}`) |
+| GET/POST | `/api/config` | lê o schema+valores / salva (validado, só `ui:True`) |
+| POST | `/api/wipe` | **apaga banco + artefatos** (`logdb.wipe_all()`) |
+| GET | `/api/bench/<slug>` | resumo dos resultados da Etapa D |
+| GET | `/rag/<slug>` | abre o dashboard fixo numa base |
+
+### Zona de perigo (wipe)
+A aba **Configurações** tem um card `alert-danger` com botão **Limpar tudo**,
+protegido por `confirm()`: chama `POST /api/wipe`, que remove `RAG/*`
+(bases, `log.db`, `index.md`) **e** `stage_d/benchmark_results.jsonl`, mas
+**não** toca código-fonte nem `config.json`. Obs.: falha com `PermissionError`
+se algum processo da pipeline ainda segurar o `log.db` (WAL) — encerre os
+processos antes.
+
+---
+
 ## Etapa D — Avaliação (isolada em `stage_d/`, **genérica / não-Godot**)
 
 Não faz parte do core (A/B/C). Mede o ganho do RAG comparando o `programador`
@@ -392,15 +474,39 @@ JSON, etc.). Não assume nenhuma linguagem.
 
 - Agente: `.opencode/agents/qa.md` (pergunta linguagem/validador/tarefas e sempre
   compara RAG x PURO, obtendo métricas de conhecimento + validade).
-- Script: `stage_d/benchmark.py` (genérico, incremental/resumível; roda
-  `python stage_d/benchmark.py --domain <dom> --lang <L> --ext <ext> --validator "<cmd {file}>" --tasks <tarefas.json>`).
-- Exemplo (Godot): RAG compila **40%** vs PURO **0%**; acerto de conhecimento 50% vs 30%.
-  Sem nenhum modelo "qwen" (síntese = `qwythos9b`). Troque `--tasks`/`--validator`
-  para avaliar qualquer domínio/indexação.
+- Script: `stage_d/benchmark.py` (genérico, incremental/resumível).
 
-## Agente maestro (`espiao`)
+  **Modos** (`--mode`, ajustável por rodada — ver "Parâmetros por rodada" acima):
+  - `code` (padrão): gera código com RAG vs modelo **PURO** (sem contexto) e
+    valida com o checador informado (`--validator "<cmd {file}>"`). Mede acerto
+    de conhecimento (símbolo esperado na saída) + validade (compilador/checador).
+  - `facts`: **recupera passagens** de uma base não-código (ex.: um livro) vs
+    **PURO**. Em vez de gerar código, o RAG busca os top-k trechos e o benchmark
+    checa se a **frase/fato esperado** (`expect[]`) aparece no contexto recuperado
+    — medindo *recall* da base. `lang`/`ext`/`validator` são ignorados. Útil para
+    testar "o RAG recuperou a passagem certa da história?" sem gerar código.
 
-Definido em `.opencode/agents/espiao.md` (temperature 0.1, bash+question allow, edit+webfetch deny).
+  Uso:
+  ```bash
+  # code (Godot): RAG gera .gd vs PURO, valida com Godot headless
+  python stage_d/benchmark.py --domain docsgodotengineorg --lang GDScript --ext gd \
+        --validator "godot --headless --script {file}" --tasks stage_d/tasks_godot.json
+
+  # facts (livro/base nao-codigo): RAG recupera passagens vs PURO
+  python stage_d/benchmark.py --domain livroX --mode facts \
+        --tasks stage_d/tasks_facts.json
+  ```
+  No dashboard, isso é disparado pela aba **Avaliação** (painel por rodada).
+-   **Retomada** (`--limit`, manifest por `model+domain+mode`): se o job cair,
+  retoma do ponto — a chave do manifest inclui domínio e modo, então
+  trocar de modo/base com o mesmo modelo não "pula" tarefas.
+- Exemplo (Godot, modo `code`): RAG compila **40%** vs PURO **0%**; acerto de
+  conhecimento 50% vs 30%. Sem nenhum modelo "qwen" (síntese = `qwythos9b`).
+  Troque `--tasks`/`--validator`/`--mode` para avaliar qualquer domínio/indexação.
+
+## Agente extrator de dados
+
+Definido em `.opencode/agents/extrator.md` (temperature 0.1, bash+question allow, edit+webfetch deny).
 
 Interativo, árvore binária:
 ```
@@ -452,6 +558,19 @@ Papel do agente: **só orquestrar** — perguntar, validar, disparar scripts, re
     fallback e ~4× mais rápido (gemma4 nem cabe na VRAM de 8GB); mantém texto integral.
 12. **Offload de síntese para hy3** — `summary_model=None` por padrão; resumo e Uso feitos
     pelo assistente remoto, tirando `qwythos9b` do pipeline local.
+13. **Frontend web substituiu o monitor antigo** — `server.py` (HTTP `:8765` + WebSocket
+    `:8766`) + `templates.py` (dashboard real, sem mock) + `loghub.py`/`logdb.py`
+    (log estruturado das fases A/B/C/D). Abas Coleta/Limpeza/Indexação/Avaliação/Configurações,
+    JSON API e wipe (Zona de perigo).
+14. **Configuração centralizada** — os antigos configs separados (captura e programador)
+    unificados em `config.json` + `config_util.py` (`SCHEMA` com `ui:True/False`,
+    validação no `POST /api/config`; `embed_model` fica `ui:False`).
+15. **Benchmark com modos `code`/`facts`** — `facts` mede *recall* de uma base não-código
+    (livro) vs PURO; `lang`/`ext`/`tasks`/`mode` tornaram-se parâmetros **por rodada**
+    (painel da aba Avaliação), saindo do config fixo.
+16. **Correções de UX** — `applyStageGating` agora remove o bloqueio ao avançar de etapa;
+    manifest de retomada do benchmark passou a incluir domínio+modo na chave (antes só
+    modelo, o que "pulava" tarefas ao trocar de base/modo).
 
 ---
 
@@ -459,7 +578,7 @@ Papel do agente: **só orquestrar** — perguntar, validar, disparar scripts, re
 
 1. **Tudo num comando** (orquestrador): `python run.py all --url "<URL>" --escopo 2 --delay 2000`
    (Fase C roda em background; use `--foreground` para acompanhar no terminal).
-2. Captura + processamento via agente: invoque `@espiao` (ele pergunta URL/escopo/delay).
+2. Captura + processamento via agente: invoque `@extrator` (ele pergunta URL/escopo/delay).
 3. Ou manualmente:
    ```
    python crawl.py --url "<URL>" --escopo 2 --delay 2000
@@ -467,10 +586,18 @@ Papel do agente: **só orquestrar** — perguntar, validar, disparar scripts, re
    python process.py --dir "RAG/<dominio>"
    ```
 4. Consulta / código:
-   ```
-   python query.py "sua pergunta"
-   python programador.py "crie uma função que faz Y" --out solucao.gd --fontes
-   ```
+    ```
+    python query.py "sua pergunta"
+    python programador.py "crie uma função que faz Y" --out solucao.gd --fontes
+    ```
+5. **Dashboard web** (monitor + uso + benchmark + config):
+    ```
+    python server.py                 # auto-detecta a base mais recente
+    python server.py --site <slug>   # fixa uma base
+    ```
+    Abra `http://localhost:8765/` (WebSocket `:8766`). Abas: Coleta / Limpeza /
+    Indexação / Avaliação / Configurações. O benchmark na aba Avaliação aceita
+    `Modo` code/facts por rodada.
 
 ---
 
@@ -498,7 +625,7 @@ Comportamento:
   terminal e esperar o fim.
 - `process` é retomável sozinho (via `process_state.json` do `process.py`): se a Fase C
   cair, basta `python run.py process --dir RAG/<dominio>` para continuar de onde parou.
-- Defaults de modelo vêm do `config_espiao.json`; os flags `--chunk-model`/`--summary-model`
+- Defaults de modelo vêm do `config.json` (seção `process`); os flags `--chunk-model`/`--summary-model`
   sobrescrevem.
 
 Exemplo (Godot docs, retomável):

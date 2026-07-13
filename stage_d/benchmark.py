@@ -34,12 +34,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import requests
 
+import config_util
+import rag_retrieve
 import programador
 
-OLLAMA = "http://localhost:11434"
-DEFAULT_MODEL = "qwen2.5-coder:7b"
+CONF = config_util.load_config()
+OLLAMA = CONF["ollama"]["url"]
+BENCH = CONF.get("benchmark", {})
+DEFAULT_MODEL = BENCH.get("model", "qwen2.5-coder:7b")
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_TASKS = os.path.join(HERE, "tasks_godot.json")
+REPO_ROOT = os.path.dirname(HERE)
+TASKS_REL = BENCH.get("tasks") or "stage_d/tasks_godot.json"
+DEFAULT_TASKS = TASKS_REL if os.path.isabs(TASKS_REL) else os.path.join(REPO_ROOT, TASKS_REL)
 BENCHDIR = r"C:/Users/kiko2/AppData/Local/Temp/opencode/bench"
 
 
@@ -101,14 +107,16 @@ def append_record(jsonl_f, run_meta, n, q, dt, rag_ok, rag_vd, rag_err,
 def main():
     ap = argparse.ArgumentParser(description="Etapa D — benchmark RAG x PURO (generico)")
     ap.add_argument("--domain", default="docsgodotengineorg")
-    ap.add_argument("--lang", default="")
-    ap.add_argument("--ext", default="gd")
+    ap.add_argument("--lang", default=BENCH.get("lang", ""))
+    ap.add_argument("--ext", default=BENCH.get("ext", "gd"))
+    ap.add_argument("--mode", default=BENCH.get("mode", "code"), choices=["code", "facts"],
+                    help="code=gera codigo vs PURO; facts=recupera passagens de base nao-codigo (livro) vs PURO")
     ap.add_argument("--validator", default="", help="comando com {file}; exit 0 = valido")
     ap.add_argument("--tasks", default=DEFAULT_TASKS, help="JSON [{q, expect[], legacy[]}]")
     ap.add_argument("--model", default=DEFAULT_MODEL)
-    ap.add_argument("--topk", type=int, default=15)
-    ap.add_argument("--num_predict", type=int, default=600, help="limite de tokens da geracao")
-    ap.add_argument("--temperature", type=float, default=0.2, help="temperatura da geracao")
+    ap.add_argument("--topk", type=int, default=BENCH.get("topk", 15))
+    ap.add_argument("--num_predict", type=int, default=BENCH.get("num_predict", 600), help="limite de tokens da geracao")
+    ap.add_argument("--temperature", type=float, default=BENCH.get("temperature", 0.2), help="temperatura da geracao")
     ap.add_argument("--note", default="", help="anotacao livre (ex.: quant, variant, etc.)")
     ap.add_argument("--limit", type=int, default=0, help="roda so N tarefas")
     args = ap.parse_args()
@@ -119,7 +127,7 @@ def main():
 
     os.makedirs(BENCHDIR, exist_ok=True)
     safe = args.model.replace(":", "_").replace("/", "_")
-    manifest_path = os.path.join(BENCHDIR, f"manifest_{safe}.json")
+    manifest_path = os.path.join(BENCHDIR, f"manifest_{safe}_{args.domain}_{args.mode}.json")
     results = []
     done = set()
     if os.path.exists(manifest_path):
@@ -138,6 +146,7 @@ def main():
     run_meta = {
         "domain": args.domain,
         "model": args.model,
+        "mode": args.mode,
         "lang": args.lang,
         "ext": args.ext,
         "validator": bool(args.validator),
@@ -157,29 +166,51 @@ def main():
         print(f"[{i:02d}/{len(tasks)}] {t['q'][:62]}...", flush=True)
         t_task = time.time()
 
-        # --- COM RAG ---
-        rag_out, _ = programador.gerar(t["q"], args.domain, topk=args.topk,
-                                       model=args.model, idioma="pt", reescrever=False,
-                                       temperature=args.temperature, num_predict=args.num_predict)
-        rag_code = programador.extrair_codigo(rag_out)
-        rag_path = os.path.join(BENCHDIR, f"rag_{i:02d}.{args.ext}")
-        open(rag_path, "w", encoding="utf-8").write(rag_code + "\n")
-        rag_ok, rag_hit, _ = score(rag_out, t.get("expect", []), t.get("legacy", []))
-        rag_vd, rag_err = validate(rag_path, args.validator)
+        if args.mode == "facts":
+            # --- COM RAG: recupera passagens da base e checa recall ---
+            _, chunks = rag_retrieve.retrieve_chunks(t["q"], args.domain, topk=args.topk)
+            rag_ctx = "\n".join(c["texto"] for c in chunks)
+            rag_ok, rag_hit, _ = score(rag_ctx, t.get("expect", []), [])
+            rag_vd, rag_err = None, ""
+            open(os.path.join(BENCHDIR, f"rag_{i:02d}.ctx.txt"), "w", encoding="utf-8").write(rag_ctx)
+            # --- SEM RAG: modelo sem contexto (conhecimento proprio) ---
+            prompt = (
+                "Responda a pergunta abaixo com base no seu conhecimento geral. "
+                "Seja direto e cite os fatos pedidos.\n\n"
+                f"PERGUNTA: {t['q']}\n\nRESPOSTA:"
+            )
+            norag_out = bare_gen(prompt, args.model, num_predict=args.num_predict,
+                                 temperature=args.temperature)
+            norag_ok, norag_hit, _ = score(norag_out, t.get("expect", []), [])
+            norag_vd, norag_err = None, ""
+            norag_wrong = []
+            rag_path = os.path.join(BENCHDIR, f"rag_{i:02d}.ctx.txt")
+            norag_path = os.path.join(BENCHDIR, f"norag_{i:02d}.ans.txt")
+            open(norag_path, "w", encoding="utf-8").write(norag_out)
+        else:
+            # --- COM RAG: gera codigo com contexto ---
+            rag_out, _ = programador.gerar(t["q"], args.domain, topk=args.topk,
+                                            model=args.model, idioma="pt", reescrever=False,
+                                            temperature=args.temperature, num_predict=args.num_predict)
+            rag_code = programador.extrair_codigo(rag_out)
+            rag_path = os.path.join(BENCHDIR, f"rag_{i:02d}.{args.ext}")
+            open(rag_path, "w", encoding="utf-8").write(rag_code + "\n")
+            rag_ok, rag_hit, _ = score(rag_out, t.get("expect", []), t.get("legacy", []))
+            rag_vd, rag_err = validate(rag_path, args.validator)
 
-        # --- SEM RAG ---
-        prompt = (
-            "Voce e um programador experiente. Gere codigo para a TAREFA abaixo. "
-            "Comente em portugues. Responda com o codigo.\n\n"
-            f"TAREFA: {t['q']}\n\nCODIGO:"
-        )
-        norag_out = bare_gen(prompt, args.model, num_predict=args.num_predict,
-                             temperature=args.temperature)
-        norag_code = programador.extrair_codigo(norag_out)
-        norag_path = os.path.join(BENCHDIR, f"norag_{i:02d}.{args.ext}")
-        open(norag_path, "w", encoding="utf-8").write(norag_code + "\n")
-        norag_ok, norag_hit, norag_wrong = score(norag_out, t.get("expect", []), t.get("legacy", []))
-        norag_vd, norag_err = validate(norag_path, args.validator)
+            # --- SEM RAG: gera codigo sem contexto ---
+            prompt = (
+                "Voce e um programador experiente. Gere codigo para a TAREFA abaixo. "
+                "Comente em portugues. Responda com o codigo.\n\n"
+                f"TAREFA: {t['q']}\n\nCODIGO:"
+            )
+            norag_out = bare_gen(prompt, args.model, num_predict=args.num_predict,
+                                 temperature=args.temperature)
+            norag_code = programador.extrair_codigo(norag_out)
+            norag_path = os.path.join(BENCHDIR, f"norag_{i:02d}.{args.ext}")
+            open(norag_path, "w", encoding="utf-8").write(norag_code + "\n")
+            norag_ok, norag_hit, norag_wrong = score(norag_out, t.get("expect", []), t.get("legacy", []))
+            norag_vd, norag_err = validate(norag_path, args.validator)
 
         results.append({
             "n": i, "q": t["q"], "expect": t.get("expect", []),
@@ -204,7 +235,7 @@ def main():
     val_rag = sum(1 for r in vals if r["val_rag"])
     val_norag = sum(1 for r in vals if r["val_norag"])
     print("\n" + "=" * 72)
-    print(f"ETAPA D — TAREFAS: {total}   lingua={args.lang or '?'}   modelo={args.model}   (tempo: {int(time.time()-t0)}s)")
+    print(f"ETAPA D — modo={args.mode}   TAREFAS: {total}   lingua={args.lang or '?'}   modelo={args.model}   (tempo: {int(time.time()-t0)}s)")
     print("-" * 72)
     print(f"ACERTO DE CONHECIMENTO (simbolo esperado na saida):")
     print(f"  RAG : {kw_rag}/{total} ({100*kw_rag/total:.0f}%)")

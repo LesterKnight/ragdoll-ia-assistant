@@ -10,6 +10,7 @@ Uso:
     linhas = logdb.recent("docsgodotengineorg", 500)
 """
 import json
+import shutil
 import sqlite3
 import threading
 from datetime import datetime, timezone, timedelta
@@ -140,3 +141,166 @@ def site_progress(site: str) -> dict:
             pass
 
     return {"done": done, "total": total, "eta": eta, "domain": domain, "type": "progress"}
+
+
+def _last_log_ts(site: str):
+    try:
+        c = sqlite3.connect(str(DB))
+        r = c.execute(
+            "SELECT data_hora FROM log WHERE site=? ORDER BY id DESC LIMIT 1", (site,)
+        ).fetchone()
+        c.close()
+        if not r:
+            return None
+        return datetime.strptime(r[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _bench_records(site: str):
+    """Linhas de benchmark (stage_d/benchmark_results.jsonl) do dominio."""
+    path = BASE / "stage_d" / "benchmark_results.jsonl"
+    out = []
+    if not path.exists():
+        return out
+    try:
+        for line in path.open(encoding="utf-8"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if r.get("domain") == site:
+                out.append(r)
+    except Exception:
+        pass
+    return out
+
+
+def site_status(site: str) -> dict:
+    """Status completo de um site: progresso A/B/C/D, execucao, dominio, etapa maxima."""
+    if not site:
+        return {"domain": "", "stage": "A", "exec": "Parado",
+                "A": {"done": 0, "total": 0}, "B": {"done": 0, "total": 0},
+                "C": {"done": 0, "total": 0, "eta": ""}, "D": {"done": 0, "total": 0}}
+    folder = BASE / "RAG" / site
+    domain = site
+    for cand in (folder / "process_state.json", folder / "crawl_manifest.json", folder / "index.json"):
+        if cand.exists():
+            try:
+                d = json.loads(cand.read_text(encoding="utf-8"))
+                if d.get("domain"):
+                    domain = d["domain"]
+                    break
+            except Exception:
+                pass
+
+    # A — coleta
+    manifest = None
+    mp = folder / "crawl_manifest.json"
+    if mp.exists():
+        try:
+            manifest = json.loads(mp.read_text(encoding="utf-8"))
+        except Exception:
+            manifest = None
+    a_total = len(manifest.get("pages", [])) if manifest else 0
+    raw = folder / "raw"
+    a_done = 0
+    if raw.exists():
+        a_done = sum(1 for p in raw.iterdir() if p.suffix == ".html")
+    elif manifest:
+        a_done = a_total
+
+    # B — limpeza
+    clean = folder / "clean.jsonl"
+    b_done = 0
+    if clean.exists():
+        try:
+            b_done = sum(1 for _ in clean.open(encoding="utf-8"))
+        except Exception:
+            b_done = 0
+    b_total = a_total
+
+    # C — indexacao
+    c = site_progress(site)
+    c_done, c_total, c_eta = c.get("done", 0), c.get("total", 0), c.get("eta", "")
+
+    # D — avaliacao
+    d_recs = _bench_records(site)
+    d_done = len(d_recs)
+    d_total = d_done
+
+    # etapa maxima alcancada
+    stage = "A"
+    if (folder / "crawl_manifest.json").exists():
+        stage = "A"
+    if (folder / "clean.jsonl").exists():
+        stage = "B"
+    if (folder / "documents.jsonl").exists():
+        stage = "C"
+    if d_done > 0:
+        stage = "D"
+
+    # execucao: log recente (<90s) para o site
+    ts = _last_log_ts(site)
+    exec_ = "Parado"
+    if ts:
+        ago = (datetime.now(timezone.utc) - ts).total_seconds()
+        if ago < 90:
+            exec_ = "Executando"
+
+    return {"domain": domain, "stage": stage, "exec": exec_,
+            "A": {"done": a_done, "total": a_total},
+            "B": {"done": b_done, "total": b_total},
+            "C": {"done": c_done, "total": c_total, "eta": c_eta},
+            "D": {"done": d_done, "total": d_total}}
+
+
+def list_bases() -> list:
+    """Lista as bases RAG reais (pastas em RAG/)."""
+    out = []
+    rag = BASE / "RAG"
+    if not rag.exists():
+        return out
+    names = {"A": "Coleta", "B": "Limpeza", "C": "Indexação", "D": "Avaliação"}
+    for d in sorted(rag.iterdir()):
+        if not d.is_dir():
+            continue
+        slug = d.name
+        st = site_status(slug)
+        done_c, total_c = st["C"]["done"], st["C"]["total"]
+        if (d / "documents.jsonl").exists() and total_c and done_c >= total_c:
+            sit = "Completo"
+        else:
+            sit = f"Incompleto · fase: {names.get(st['stage'], st['stage'])}"
+        out.append({"slug": slug, "domain": st["domain"], "stage": st["stage"],
+                    "situacao": sit, "exec": st["exec"]})
+    return out
+
+
+def wipe_all() -> dict:
+    """Apaga banco de log e TODOS os artefatos gerados (bases RAG + benchmark).
+    Nao toca em codigo-fonte nem em config.json."""
+    removed = []
+    rag = BASE / "RAG"
+    if rag.exists():
+        for child in rag.iterdir():
+            try:
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+                removed.append(str(child.relative_to(BASE)))
+            except Exception:
+                pass
+    # resultados de benchmark (stage_d/)
+    bench = BASE / "stage_d" / "benchmark_results.jsonl"
+    if bench.exists():
+        try:
+            bench.unlink()
+            removed.append(str(bench.relative_to(BASE)))
+        except Exception:
+            pass
+    return {"ok": True, "removed": removed}

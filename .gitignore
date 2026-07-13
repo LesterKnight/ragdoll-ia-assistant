@@ -29,3 +29,7 @@ Thumbs.db
 .DS_Store
 .vscode/
 .idea/
+
+# Resultados de benchmark (artefato gerado por stage_d/benchmark.py)
+stage_d/benchmark_results.jsonl
+

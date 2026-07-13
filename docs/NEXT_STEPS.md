@@ -83,7 +83,7 @@ Script único que executa a sequência **Fase A → Fase B → Fase C** num só 
 - Respeita retomada de cada fase (`process_state.json`; futuro `crawl_state.json` da item 1b).
 - Pára em erro de fase anterior (ex.: não indexa se `clean.jsonl` estiver incompleto).
 - Não cobre o **Uso** (query/programador) — esse é executado separadamente pelo usuário.
-- Reúne os passos hoje em `docs/README.md` / `.opencode/agents/espiao.md` num só comando.
+- Reúne os passos hoje em `docs/README.md` / `.opencode/agents/extrator.md` num só comando.
 
 ---
 

@@ -16,10 +16,12 @@ import sys
 
 import requests
 
+import config_util
 import rag_retrieve
 
-OLLAMA = "http://localhost:11434"
-ANSWER_MODEL = "qwen2.5-coder:1.5b"
+CONF = config_util.load_config()
+OLLAMA = CONF["ollama"]["url"]
+ANSWER_MODEL = CONF["query"]["model"]
 
 
 def ollama_chat(prompt: str, model: str, timeout: int = 300) -> str:

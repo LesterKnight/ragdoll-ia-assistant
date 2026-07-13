@@ -707,8 +707,8 @@ def process(dir_path: str, limpar_raw: bool = False,
 
 
 def main():
-    from config_util import load_config
-    cfg = load_config("config_espiao.json").get("process", {})
+    import config_util
+    cfg = config_util.load_config().get("process", {})
 
     ap = argparse.ArgumentParser(description="Fase C - processamento/indexacao RAG")
     ap.add_argument("--dir", required=True, help="pasta RAG/<dominio-simplificado>")

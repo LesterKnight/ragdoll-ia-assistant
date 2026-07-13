@@ -218,8 +218,8 @@ def crawl(url: str, escopo: int, delay_ms: int, limite: int,
 
 
 def main():
-    from config_util import load_config
-    cfg = load_config("config_espiao.json").get("crawl", {})
+    import config_util
+    cfg = config_util.load_config().get("crawl", {})
 
     ap = argparse.ArgumentParser(description="Fase A - captura de documentacao")
     ap.add_argument("--url", required=True)

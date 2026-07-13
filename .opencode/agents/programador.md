@@ -52,11 +52,11 @@ primeira tentativa sem checagem:
 
 ## Regras
 
-- O code_generator usa o modelo definido em config_programador.json. So passe 'model' se o usuario pedir.
+- O code_generator usa o modelo definido em config.json (secao programador). So passe 'model' se o usuario pedir.
 - Antes de editar um arquivo existente, leia-o primeiro.
 - Prefira mudancas minimas e claras.
 - Se a documentacao necessaria nao estiver no RAG, avise o usuario que ele pode
-  captura-la antes com o agente @espiao.
+  captura-la antes com o agente @extrator.
 
 ## Dominios disponiveis no RAG
 

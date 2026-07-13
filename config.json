@@ -1,0 +1,38 @@
+{
+  "ollama": {
+    "url": "http://localhost:11434",
+    "embed_model": "nomic-embed-text"
+  },
+  "crawl": {
+    "escopo": 2,
+    "delay_ms": 2000,
+    "limite": 0,
+    "nav_timeout": 30000,
+    "idle_timeout": 15000
+  },
+  "process": {
+    "chunk_model": "qwen2.5-coder:1.5b",
+    "summary_model": null,
+    "num_ctx": 16384
+  },
+  "query": {
+    "model": "qwen2.5-coder:1.5b",
+    "topk": 5
+  },
+  "programador": {
+    "model": "qwen2.5-coder:7b",
+    "topk": 15,
+    "idioma": "pt",
+    "reescrever": false
+  },
+  "benchmark": {
+    "model": "qwen2.5-coder:7b",
+    "topk": 7,
+    "num_predict": 600,
+    "temperature": 0.2,
+    "lang": "GDScript",
+    "ext": "gd",
+    "tasks": "stage_d/tasks_godot.json",
+    "mode": "code"
+  }
+}

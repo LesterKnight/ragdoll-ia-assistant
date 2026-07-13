@@ -21,10 +21,12 @@ from pathlib import Path
 
 import requests
 
+import config_util
 import rag_retrieve
 
-OLLAMA = "http://localhost:11434"
-GEN_MODEL = "qwen2.5-coder:7b"
+CONF = config_util.load_config()
+OLLAMA = CONF["ollama"]["url"]
+GEN_MODEL = CONF["programador"]["model"]
 
 
 def _is_reasoning_model(model: str) -> bool:
@@ -120,8 +122,7 @@ def extrair_codigo(texto: str) -> str:
 
 
 def main():
-    from config_util import load_config
-    cfg = load_config("config_programador.json")
+    cfg = config_util.load_config().get("programador", {})
     gen_default = cfg.get("model", GEN_MODEL)
 
     ap = argparse.ArgumentParser(description="Gerador de codigo fundamentado no RAG")

@@ -15,8 +15,11 @@ from pathlib import Path
 import numpy as np
 import requests
 
-OLLAMA = "http://localhost:11434"
-EMBED_MODEL = "nomic-embed-text"
+import config_util
+
+CONF = config_util.load_config()
+OLLAMA = CONF["ollama"]["url"]
+EMBED_MODEL = CONF["ollama"]["embed_model"]
 
 RAG_ROOT = Path(__file__).resolve().parent / "RAG"
 
