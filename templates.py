@@ -143,7 +143,7 @@ HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
   .btn.danger:hover{background:#ff8585;color:#1a0000}
  </style></head><body>
 <header class="appbar">
-  <div class="brand">RagThulhu<span class="brand-sub">base: __DOMAIN__</span></div>
+  <div class="brand">RagThulhu<span class="brand-sub" id="brand-status">status: Parado</span></div>
   <div class="spacer"></div>
   __BACK__
   <span id="status" class="badge stop">conectando…</span>
@@ -155,7 +155,7 @@ __TABS__
  <section id="p-home" class="show">
   <div class="card">
    <h2>Log ao vivo</h2>
-   <div class="note">Fonte: SQLite (RAG/log.db) → WebSocket. Fallbacks determinísticos: <b id="fb" style="color:var(--warn)">0</b></div>
+   <div class="note">Fonte: SQLite (RAG/log.db) → WebSocket. Fallbacks determinísticos (<span id="fb-site">—</span>): <b id="fb" style="color:var(--warn)">0</b></div>
    <div class="log" id="log"><span class="empty-note">ainda não há itens</span></div>
   </div>
  </section>
@@ -175,7 +175,7 @@ __TABS__
  <section id="p-B">
    <div class="card">
     <h2>Limpeza</h2>
-    <div class="note">Fallbacks determinísticos: <b id="fbB" style="color:var(--warn)">0</b></div>
+    <div class="note">Fallbacks determinísticos (<span class="fb-site">—</span>): <b id="fbB" style="color:var(--warn)">0</b></div>
     <div class="prog">
     <div class="row"><span>Progresso</span><span><b id="pctB">0%</b> · <span id="doneB">0</span>/<span id="totalB">0</span> · ETA <span id="etaB">—</span></span></div>
     <div class="bar"><div class="fill" id="fillB"></div></div>
@@ -187,7 +187,7 @@ __TABS__
  <section id="p-C">
    <div class="card">
     <h2>Indexação</h2>
-    <div class="note">Fallbacks determinísticos: <b id="fbC" style="color:var(--warn)">0</b></div>
+    <div class="note">Fallbacks determinísticos (<span class="fb-site">—</span>): <b id="fbC" style="color:var(--warn)">0</b></div>
     <div class="prog">
     <div class="row"><span>Progresso</span><span><b id="pctC">0%</b> · <span id="doneC">0</span>/<span id="totalC">0</span> · ETA <span id="etaC">—</span></span></div>
     <div class="bar"><div class="fill" id="fillC"></div></div>
@@ -342,11 +342,7 @@ function handleRow(r){
   appendLog(logEl, r);
   if (r.etapa === 'B' || r.etapa === 'C'){ appendLog(logsByEtapa[r.etapa], r); }
   if (r.etapa === 'A'){ addPage(r.log); }
-  if (/fallback deterministico/.test(r.log || '')){
-    const f = document.getElementById('fb'); if (f) f.textContent = (parseInt(f.textContent)||0)+1;
-    if (r.etapa === 'B'){ const fb=document.getElementById('fbB'); if (fb) fb.textContent = (parseInt(fb.textContent)||0)+1; }
-    if (r.etapa === 'C'){ const fc=document.getElementById('fbC'); if (fc) fc.textContent = (parseInt(fc.textContent)||0)+1; }
-  }
+}
 }
 function applyProgress(k, done, total, eta){
   const pct = total ? Math.round(100*done/total) : 0;
@@ -361,6 +357,20 @@ function applyStatus(s){
   if (s && s.C){ applyProgress('C', s.C.done||0, s.C.total||0, s.C.eta||''); }
   if (s && s.D){ applyProgress('D', s.D.done||0, s.D.total||0, ''); }
   if (s && s.exec){ statusEl.textContent = 'conectado · ' + s.exec; statusEl.className = 'badge ' + (s.exec==='Executando'?'run':'ok'); }
+  const bs = document.getElementById('brand-status');
+  if (bs){
+    if (s && s.exec === 'Executando'){
+      const op = (s.etapa && STAGE_NAMES[s.etapa]) ? ' [' + STAGE_NAMES[s.etapa] + ']' : '';
+      bs.textContent = 'status: ' + (s.domain || '') + op;
+    } else {
+      bs.textContent = 'status: Parado';
+    }
+  }
+  const fbs = (s && s.fallbacks) || {total:0, A:0, B:0, C:0, D:0};
+  const setTxt = function(id, v){ const e = document.getElementById(id); if (e) e.textContent = v; };
+  setTxt('fb', fbs.total); setTxt('fbB', fbs.B); setTxt('fbC', fbs.C);
+  const lbl = (s && (s.domain || SITE)) || '—';
+  document.querySelectorAll('.fb-site').forEach(function(e){ e.textContent = lbl; });
   applyStageGating();
 }
 function addPage(text){

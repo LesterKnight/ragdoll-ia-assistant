@@ -157,6 +157,25 @@ def _last_log_ts(site: str):
         return None
 
 
+def count_fallbacks(site: str) -> dict:
+    """Contagem persistente de 'fallback deterministico' por etapa, para um site."""
+    out = {"total": 0, "A": 0, "B": 0, "C": 0, "D": 0}
+    try:
+        c = sqlite3.connect(str(DB))
+        rows = c.execute(
+            "SELECT etapa, COUNT(*) FROM log WHERE site=? "
+            "AND log LIKE '%fallback deterministico%' GROUP BY etapa", (site,)
+        ).fetchall()
+        c.close()
+        for etapa, n in rows:
+            if etapa in out:
+                out[etapa] = n
+                out["total"] += n
+    except Exception:
+        pass
+    return out
+
+
 def _bench_records(site: str):
     """Linhas de benchmark (stage_d/benchmark_results.jsonl) do dominio."""
     path = BASE / "stage_d" / "benchmark_results.jsonl"
@@ -251,7 +270,21 @@ def site_status(site: str) -> dict:
         if ago < 90:
             exec_ = "Executando"
 
-    return {"domain": domain, "stage": stage, "exec": exec_,
+    # operacao em execucao = etapa do log mais recente
+    etapa_exec = ""
+    try:
+        c2 = sqlite3.connect(str(DB))
+        rr = c2.execute(
+            "SELECT etapa FROM log WHERE site=? ORDER BY id DESC LIMIT 1", (site,)
+        ).fetchone()
+        c2.close()
+        if rr:
+            etapa_exec = rr[0]
+    except Exception:
+        pass
+
+    return {"domain": domain, "stage": stage, "exec": exec_, "etapa": etapa_exec,
+            "fallbacks": count_fallbacks(site),
             "A": {"done": a_done, "total": a_total},
             "B": {"done": b_done, "total": b_total},
             "C": {"done": c_done, "total": c_total, "eta": c_eta},
