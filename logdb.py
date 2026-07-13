@@ -283,8 +283,42 @@ def site_status(site: str) -> dict:
     except Exception:
         pass
 
+    # erros persistentes e ultima atividade (qualquer log)
+    erros = 0
+    last_activity = ""
+    try:
+        c3 = sqlite3.connect(str(DB))
+        er = c3.execute(
+            "SELECT COUNT(*) FROM log WHERE site=? AND tipo_log='erro'", (site,)
+        ).fetchone()
+        la = c3.execute(
+            "SELECT MAX(data_hora) FROM log WHERE site=?", (site,)
+        ).fetchone()
+        c3.close()
+        erros = er[0] if er else 0
+        last_activity = la[0] if la else ""
+    except Exception:
+        pass
+
+    # saude: running / ok (completo e parado) / idle (nunca rodou ou incompleto e
+    #        recente) / crashed (incompleto e estagnado) / erro (erro recente)
+    age = (datetime.now(timezone.utc) - ts).total_seconds() if ts else 1e9
+    if exec_ == "Executando":
+        health = "running"
+    elif stage == "D":
+        health = "ok"
+    elif ts is None:
+        health = "idle"
+    elif age > 300:
+        health = "crashed" if erros else "parado"
+    elif erros and age < 300:
+        health = "erro"
+    else:
+        health = "idle"
+
     return {"domain": domain, "stage": stage, "exec": exec_, "etapa": etapa_exec,
-            "fallbacks": count_fallbacks(site),
+            "fallbacks": count_fallbacks(site), "erros": erros,
+            "last_activity": last_activity, "health": health,
             "A": {"done": a_done, "total": a_total},
             "B": {"done": b_done, "total": b_total},
             "C": {"done": c_done, "total": c_total, "eta": c_eta},
@@ -309,7 +343,8 @@ def list_bases() -> list:
         else:
             sit = f"Incompleto · fase: {names.get(st['stage'], st['stage'])}"
         out.append({"slug": slug, "domain": st["domain"], "stage": st["stage"],
-                    "situacao": sit, "exec": st["exec"]})
+                    "situacao": sit, "exec": st["exec"], "health": st["health"],
+                    "erros": st["erros"], "last_activity": st["last_activity"]})
     return out
 
 

@@ -16,12 +16,13 @@ RAG_TABS = (
   '  <button class="tab" data-t="C">Indexação</button>\n'
   '  <button class="tab" data-t="D">Avaliação</button>\n'
   '  <button class="tab" data-t="uso">Uso</button>')
-BACK_LINK = '<a href="/" class="btn">← Bases RAG</a>'
+BACK_LINK = '<a href="/visao-geral" class="btn">← Visão Geral</a>'
 
 HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>RagThulhu — painel de serviço</title>
-<style>
- :root{
+ <style>
+  @font-face{font-family:'Cthulhu Calling';src:url('/static/cthulhu-calling.woff2') format('woff2');font-display:swap;}
+  :root{
   --bg:#0b0d10; --bg2:#111418; --bg3:#161b21; --border:#222a31; --border2:#2c363f;
   --text:#d6dbe0; --muted:#7d8794; --green:#33ff66; --green2:#66ff99; --accent:#6cf;
   --warn:#ffd27d; --danger:#ff6b6b;
@@ -32,10 +33,15 @@ HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
  a{color:var(--green)}
  .appbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:12px 18px;background:rgba(11,13,16,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
- .brand{font:700 16px var(--mono);color:var(--green);letter-spacing:.5px;display:flex;align-items:baseline}
- .brand-sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:8px}
- .spacer{flex:1}
- .badge{display:inline-block;padding:3px 11px;border-radius:999px;font:600 11px var(--sans);border:1px solid var(--border2)}
+  .brand{display:flex;align-items:baseline}
+  .brand-mark{font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:27px;letter-spacing:1px;line-height:1;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(51,255,102,.45))}
+  .brand-sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:10px}
+  .spacer{flex:1}
+  .topnav{display:flex;gap:4px;align-items:center}
+  .nav-link{color:var(--muted);text-decoration:none;font:600 13px var(--sans);padding:7px 12px;border-radius:9px;transition:.15s}
+  .nav-link:hover{color:var(--text);background:var(--bg3)}
+  .nav-link.active{color:var(--green);background:rgba(51,255,102,.08);box-shadow:inset 0 0 0 1px rgba(51,255,102,.15)}
+  .badge{display:inline-block;padding:3px 11px;border-radius:999px;font:600 11px var(--sans);border:1px solid var(--border2)}
  .badge.ok{color:#7cffb0;background:rgba(51,255,102,.1);border-color:rgba(51,255,102,.3)}
  .badge.stop{color:var(--muted)}
  .badge.run{color:var(--warn);background:rgba(255,200,80,.1);border-color:rgba(255,200,80,.3)}
@@ -61,7 +67,8 @@ HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
  .prog .row{display:flex;justify-content:space-between;font:12px var(--mono);color:var(--muted);margin-bottom:7px}
  .bar{height:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:999px;overflow:hidden}
  .fill{height:100%;width:0;background:linear-gradient(90deg,#1f8f4f,#33ff66);transition:width .5s ease;box-shadow:0 0 14px rgba(51,255,102,.45)}
- .log{background:#07090b;border:1px solid var(--border);border-radius:12px;padding:14px;height:56vh;overflow:auto;font:12.5px/1.55 var(--mono);color:#bdf5cf;white-space:pre-wrap;word-break:break-word}
+  .log{background:#07090b;border:1px solid var(--border);border-radius:12px;padding:14px;height:56vh;overflow:auto;font:12.5px/1.55 var(--mono);color:#bdf5cf;white-space:pre-wrap;word-break:break-word}
+  .home-log{max-height:300px;height:auto}
  .ln{white-space:pre-wrap}
  .ln.sucesso{color:#9be8b4}
  .ln.erro{color:#ff8a8a}
@@ -85,6 +92,17 @@ HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
   .bp-row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
   .bp-row label{display:flex;flex-direction:column;gap:5px;font:600 11px var(--sans);color:var(--muted)}
   .bp-row select,.bp-row input{flex:1;min-width:150px}
+  .cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .stat-card{background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:14px 18px;min-width:130px;flex:1}
+  .stat-card .n{font:700 26px var(--mono);color:var(--text)}
+  .stat-card .l{font:600 11px var(--sans);color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:4px}
+  .health-dot{display:inline-flex;align-items:center;gap:7px;font:600 12px var(--sans)}
+  .health-dot::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--muted)}
+  .health-dot.running::before{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .health-dot.ok::before{background:var(--blue,#4aa3ff)}
+  .health-dot.idle::before{background:var(--muted)}
+  .health-dot.crashed::before{background:var(--danger);box-shadow:0 0 8px var(--danger)}
+  .health-dot.erro::before{background:#ffb020;box-shadow:0 0 8px #ffb020}
  textarea,select,input{background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font:13px var(--mono);color-scheme:dark}
  textarea{width:100%;min-height:84px;resize:vertical}
  .field{margin-top:14px}
@@ -143,22 +161,34 @@ HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
   .btn.danger:hover{background:#ff8585;color:#1a0000}
  </style></head><body>
 <header class="appbar">
-  <div class="brand">RagThulhu<span class="brand-sub" id="brand-status">status: Parado</span></div>
+   <div class="brand"><span class="brand-mark">RagThulhu</span><span class="brand-sub" id="brand-status">status: Parado</span></div>
+  <nav class="topnav">
+    <a href="/visao-geral" class="nav-link">Visão Geral</a>
+    <a href="/" class="nav-link">Nova base</a>
+  </nav>
   <div class="spacer"></div>
-  __BACK__
   <span id="status" class="badge stop">conectando…</span>
 </header>
 <nav class="tabs" id="tabs">
 __TABS__
 </nav>
 <div class="wrap">
- <section id="p-home" class="show">
-  <div class="card">
-   <h2>Log ao vivo</h2>
-   <div class="note">Fonte: SQLite (RAG/log.db) → WebSocket. Fallbacks determinísticos (<span class="fb-site">—</span>): <b id="fb" style="color:var(--warn)">0</b></div>
-   <div class="log" id="log"><span class="empty-note">ainda não há itens</span></div>
-  </div>
- </section>
+  <section id="p-home" class="show">
+   <div class="cards" id="health-summary"></div>
+   <div class="card">
+    <h2>Saúde das bases</h2>
+    <div class="note">Visão geral de saúde: processos em execução, parados ou com falha. Os detalhes por etapa ficam nas abas de cada base (Coleta / Limpeza / Indexação / Avaliação).</div>
+    <table class="tbl">
+     <thead><tr><th>Base</th><th>Saúde</th><th>Situação</th><th>Execução</th><th>Erros</th><th>Última atividade</th></tr></thead>
+     <tbody id="health-body"><tr><td colspan="6" class="empty-note">carregando…</td></tr></tbody>
+    </table>
+   </div>
+   <div class="card">
+    <h2>Últimos eventos <span class="muted" style="font-weight:400;font-size:12px">· ao vivo</span></h2>
+    <div class="note">Atividade recente da base em foco. O log completo por etapa fica nas abas de cada base (Coleta / Limpeza / Indexação / Avaliação).</div>
+    <div class="log home-log" id="home-log"><span class="empty-note">ainda não há itens</span></div>
+   </div>
+  </section>
 
  <section id="p-A">
   <div class="card">
@@ -200,13 +230,16 @@ __TABS__
   <div class="card">
    <h2>Avaliação — benchmark (RAG × sem RAG)</h2>
    <div class="bench-params">
-     <div class="bp-row">
-       <label>Modo
-         <select id="bench-mode">
-           <option value="code">code — gera código vs PURO (Godot etc.)</option>
-           <option value="facts">facts — recupera passagens vs PURO (livro/base não-código)</option>
-         </select>
-       </label>
+      <div class="bp-row">
+        <label>Modo
+          <select id="bench-mode">
+            <option value="code">code — gera código vs PURO (Godot etc.)</option>
+            <option value="facts">facts — recupera passagens vs PURO (livro/base não-código)</option>
+          </select>
+        </label>
+        <label>Modelo
+          <select id="bench-model" class="btn"></select>
+        </label>
        <label>Linguagem (rótulo, só code)
          <input id="bench-lang" type="text" value="GDScript">
        </label>
@@ -271,7 +304,7 @@ __TABS__
     </div>
     <div class="field" style="display:flex;gap:14px;flex-wrap:wrap">
      <div style="flex:1;min-width:120px"><label>topk</label><input id="uso-topk" class="btn" type="number" value="5" style="width:100%"></div>
-     <div style="flex:2;min-width:200px"><label>modelo</label><input id="uso-model" class="btn" type="text" value="qwen2.5-coder:1.5b" style="width:100%"></div>
+      <div style="flex:2;min-width:200px"><label>modelo</label><select id="uso-model" class="btn" style="width:100%"></select></div>
     </div>
     <div class="actions" style="margin-top:14px"><button class="btn" id="uso-run">Executar</button></div>
     <div class="field">
@@ -297,6 +330,12 @@ __TABS__
   </section>
   <section id="p-config">
     <div class="card">
+      <div class="card-head"><h2>Ollama</h2><span id="ollama-status" class="badge stop">verificando…</span></div>
+      <div class="note">Modelos disponíveis na instância do Ollama em <code id="ollama-url">—</code>. Todos os dropdowns de modelo da app (Configurações, Uso e Avaliação) usam esta lista, consultada em tempo real no endereço acima.</div>
+      <div class="actions"><button class="btn" id="ollama-refresh">Atualizar modelos</button></div>
+      <div id="ollama-models" class="note"></div>
+    </div>
+    <div class="card">
       <div class="card-head"><h2>Configurações</h2><button class="btn" id="config-save">Salvar alterações</button></div>
       <div class="note">Parâmetros seguros de mudar em tempo de execução. Itens que podem quebrar o app (ex.: modelo de embedding, que precisa ser igual na indexação e na consulta) não aparecem aqui. As mudanças valem para novas execuções.</div>
       <div id="config-form"><div class="empty-note">carregando…</div></div>
@@ -320,6 +359,9 @@ const logEl = document.getElementById('log');
 const statusEl = document.getElementById('status');
 const logsByEtapa = {B:document.getElementById('logB'),C:document.getElementById('logC')};
 const seenPages = new Set();
+const homeLogEl = document.getElementById('home-log');
+let AVAILABLE_MODELS = [];
+const FALLBACK_MODELS = ['qwen2.5-coder:1.5b','qwen2.5-coder:7b','nomic-embed-text'];
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
 function set(id,v){ const e=document.getElementById(id); if(e) e.textContent=v; }
@@ -337,12 +379,19 @@ function appendLog(container, r){
   container.appendChild(fmtLine(r));
   container.scrollTop = container.scrollHeight;
 }
+function appendHomeLog(r){
+  if (!homeLogEl) return;
+  const em = homeLogEl.querySelector('.empty-note'); if (em) em.remove();
+  homeLogEl.appendChild(fmtLine(r));
+  while (homeLogEl.childElementCount > 80) homeLogEl.removeChild(homeLogEl.firstChild);
+  homeLogEl.scrollTop = homeLogEl.scrollHeight;
+}
 function handleRow(r){
   if (!r) return;
   appendLog(logEl, r);
+  appendHomeLog(r);
   if (r.etapa === 'B' || r.etapa === 'C'){ appendLog(logsByEtapa[r.etapa], r); }
   if (r.etapa === 'A'){ addPage(r.log); }
-}
 }
 function applyProgress(k, done, total, eta){
   const pct = total ? Math.round(100*done/total) : 0;
@@ -526,6 +575,46 @@ function baseAction(act, slug){
     .then(function(){ loadBases(); }).catch(function(e){ alert('erro: '+e); });
 }
 
+/* ---------- Visão Geral: saúde ---------- */
+const HEALTH_LABEL = {running:'Rodando', ok:'Parado (OK)', idle:'Parado', crashed:'Crashado', erro:'Erro'};
+function healthDot(h){
+  return '<span class="health-dot '+(h||'idle')+'">'+(HEALTH_LABEL[h]||h||'—')+'</span>';
+}
+function statCard(label, n){
+  return '<div class="stat-card"><div class="n">'+n+'</div><div class="l">'+label+'</div></div>';
+}
+function loadHomeHealth(){
+  fetch('/api/bases').then(r=>r.json()).then(function(d){
+    const bases = d.bases || [];
+    const total = bases.length;
+    const completas = bases.filter(function(b){ return b.situacao === 'Completo'; }).length;
+    const running = bases.filter(function(b){ return b.health === 'running'; }).length;
+    const probs = bases.filter(function(b){ return b.health === 'crashed' || b.health === 'erro'; }).length;
+    const sum = document.getElementById('health-summary');
+    if (sum) sum.innerHTML = statCard('Bases', total) + statCard('Completas', completas)
+      + statCard('Em execução', running) + statCard('Com erro/crash', probs);
+
+    const body = document.getElementById('health-body');
+    if (!body) return;
+    let list = bases;
+    if (SITE) list = bases.filter(function(b){ return b.slug === SITE; });
+    if (!list.length){ body.innerHTML = '<tr><td colspan="6" class="empty-note">ainda não há itens</td></tr>'; return; }
+    body.innerHTML = list.map(function(b){
+      const name = b.domain || b.slug;
+      const link = (SITE && b.slug === SITE) ? name
+        : '<a href="/rag/'+encodeURIComponent(b.slug)+'">'+name+'</a>';
+      return '<tr>'
+        + '<td>'+link+'</td>'
+        + '<td>'+healthDot(b.health)+'</td>'
+        + '<td>'+b.situacao+'</td>'
+        + '<td>'+b.exec+'</td>'
+        + '<td>'+(b.erros||0)+'</td>'
+        + '<td>'+(b.last_activity||'—')+'</td>'
+        + '</tr>';
+    }).join('');
+  }).catch(function(){});
+}
+
 /* ---------- Uso (query / programador) ---------- */
 let USO_MODE='query';
 function setUsoMode(m){
@@ -539,7 +628,7 @@ function setUsoMode(m){
   const qModel = (CONFIG_VALUES.query && CONFIG_VALUES.query.model) || 'qwen2.5-coder:1.5b';
   const pModel = (CONFIG_VALUES.programador && CONFIG_VALUES.programador.model) || 'qwen2.5-coder:7b';
   document.getElementById('uso-topk').value = m==='query'?qTopk:pTopk;
-  document.getElementById('uso-model').value = m==='query'?qModel:pModel;
+  const ue=document.getElementById('uso-model'); if(ue) populateSelect(ue, m==='query'?qModel:pModel);
 }
 function loadUsoDomains(){
   fetch('/api/bases').then(r=>r.json()).then(function(d){
@@ -572,6 +661,52 @@ function runUso(){
 /* ---------- Configurações ---------- */
 let CONFIG_SCHEMA = [];
 let CONFIG_VALUES = {};
+function populateSelect(el, current){
+  if(!el) return;
+  const opts = AVAILABLE_MODELS.length ? AVAILABLE_MODELS : FALLBACK_MODELS;
+  const cur = (current===null||current===undefined||current==='') ? '' : String(current);
+  let list = opts.slice();
+  if(cur && list.indexOf(cur)===-1) list = [cur].concat(list);
+  el.innerHTML = list.map(function(o){
+    const ov=String(o);
+    return '<option value="'+esc(ov)+'"'+(ov===cur?' selected':'')+'>'+esc(ov)+'</option>';
+  }).join('');
+}
+function applyModelOptions(){
+  ['cfg-process_chunk_model','cfg-process_summary_model','cfg-query_model','cfg-programador_model'].forEach(function(id){
+    const el=document.getElementById(id); if(el){ const cur=el.value; populateSelect(el, cur); }
+  });
+  const ue=document.getElementById('uso-model'); if(ue){ const cur=ue.value; populateSelect(ue, cur); }
+  const be=document.getElementById('bench-model'); if(be){ const cur=be.value; populateSelect(be, cur); }
+}
+function updateOllamaStatus(info){
+  const badge=document.getElementById('ollama-status');
+  const urlEl=document.getElementById('ollama-url');
+  const mods=document.getElementById('ollama-models');
+  if(urlEl) urlEl.textContent = info.url || '—';
+  if(badge){
+    if(info.connected){ badge.textContent='Conectado'; badge.className='badge ok'; }
+    else { badge.textContent='Desconectado'; badge.className='badge fail'; }
+  }
+  if(mods){
+    if(info.connected){
+      mods.textContent = (info.models||[]).length + ' modelo(s) disponível(is). Embedding: ' + (info.embed_model||'—');
+    } else {
+      mods.textContent = 'Não foi possível conectar: ' + (info.error||'erro desconhecido');
+    }
+  }
+}
+function fetchOllama(){
+  fetch('/api/ollama').then(function(r){ return r.json(); }).then(function(info){
+    AVAILABLE_MODELS = (info.models||[]).filter(Boolean);
+    updateOllamaStatus(info);
+    applyModelOptions();
+  }).catch(function(){
+    AVAILABLE_MODELS = [];
+    updateOllamaStatus({connected:false, error:'falha de rede'});
+    applyModelOptions();
+  });
+}
 function loadConfig(){
   const form=document.getElementById('config-form'); if(!form) return;
   fetch('/api/config').then(r=>r.json()).then(function(d){
@@ -597,9 +732,16 @@ function renderConfig(){
     if(s.type==='bool'){
       control='<input type="checkbox" id="'+id+'" '+((val===true||val==='true')?'checked':'')+'>';
     } else if(s.type==='select'){
-      control='<select id="'+id+'">'+ (s.options||[]).map(function(o){
-        const ov=(o===null?'':String(o)); const sv=(val===null||val===undefined?'':String(val));
-        return '<option value="'+esc(ov)+'"'+(ov===sv?' selected':'')+'>'+esc(ov===''||ov==='null'?'(vazio)':ov)+'</option>';
+      let opts=(s.options||[]);
+      if(s.models && AVAILABLE_MODELS.length) opts=AVAILABLE_MODELS.slice();
+      const sv=(val===null||val===undefined)?'':String(val);
+      if(s.models && sv && opts.indexOf(sv)===-1) opts=[sv].concat(opts);
+      control='<select id="'+id+'">'+ opts.map(function(o){
+        const ov=(Array.isArray(o)?o[0]:o);
+        const lab=(Array.isArray(o)?o[1]:ov);
+        const ovs=(ov===null||ov===undefined)?'':String(ov);
+        const labs=(lab===null||lab===undefined||lab==='')?'(vazio)':String(lab);
+        return '<option value="'+esc(ovs)+'"'+(ovs===sv?' selected':'')+'>'+esc(labs)+'</option>';
       }).join('') +'</select>';
     } else {
       const tp=(s.type==='number')?'number':(s.type==='url'?'url':'text');
@@ -634,7 +776,7 @@ function activateTab(t){
   const el = document.getElementById('p-' + t);
   if (el) el.classList.add('show');
   if (t==='D' && SITE) loadBench(SITE);
-  if (t==='config') loadConfig();
+  if (t==='config'){ loadConfig(); fetchOllama(); }
 }
 var STAGE_ORDER = ['A','B','C','D'];
 var STAGE_NAMES = {A:'Coleta',B:'Limpeza',C:'Indexação',D:'Avaliação'};
@@ -674,7 +816,9 @@ const benchRun=document.getElementById('bench-run');
 if(benchRun) benchRun.addEventListener('click', function(){
   if(!SITE){ alert('Abra uma base específica (/rag/<slug>) para rodar o benchmark.'); return; }
   const mode=document.getElementById('bench-mode').value;
+  const bm=document.getElementById('bench-model');
   const req={dominio:SITE, mode:mode,
+    model: bm?bm.value:'',
     lang:document.getElementById('bench-lang').value,
     ext:document.getElementById('bench-ext').value,
     tasks:document.getElementById('bench-tasks').value};
@@ -717,9 +861,21 @@ ws.onmessage = function(ev){
 activateTab('home');
 loadConfig();
 setUsoMode('query');
+fetchOllama();
+loadHomeHealth();
 loadBases();
 loadUsoDomains();
 if (SITE){ loadBench(SITE); }
+setInterval(loadHomeHealth, 5000);
+
+const ollamaRefresh=document.getElementById('ollama-refresh');
+if(ollamaRefresh) ollamaRefresh.addEventListener('click', fetchOllama);
+
+document.querySelectorAll('.topnav .nav-link').forEach(function(a){
+  var h=a.getAttribute('href'), p=location.pathname;
+  var on=(h==='/'&&(p==='/'||p==='/novo'))||(h==='/visao-geral'&&(p==='/visao-geral'||p.indexOf('/rag/')===0));
+  if(on) a.classList.add('active');
+});
 
 /* ---------- Mock (apenas com ?mock=1) ---------- */
 const MOCK_LOGS = [
@@ -755,19 +911,25 @@ TEMPLATE = HTML
 
 TEMPLATE_NOVO = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>RagThulhu — nova base</title>
-<style>
-:root{--bg:#0b0d10;--bg3:#161b21;--border2:#2c363f;--text:#d6dbe0;--muted:#7d8794;--green:#33ff66;--sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--mono:'JetBrains Mono','Fira Code',Consolas,monospace}
+ <style>
+ @font-face{font-family:'Cthulhu Calling';src:url('/static/cthulhu-calling.woff2') format('woff2');font-display:swap;}
+ :root{--bg:#0b0d10;--bg3:#161b21;--border2:#2c363f;--text:#d6dbe0;--muted:#7d8794;--green:#33ff66;--sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--mono:'JetBrains Mono','Fira Code',Consolas,monospace}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
 a{color:var(--green);text-decoration:none}
 .appbar{display:flex;align-items:center;gap:14px;padding:12px 18px;background:rgba(11,13,16,.9);border-bottom:1px solid var(--border2)}
-.brand{font:700 16px var(--mono);color:var(--green);letter-spacing:.5px}
-.brand-sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:8px}
-.spacer{flex:1}
-.btn{background:var(--bg3);color:var(--text);border:1px solid var(--border2);padding:8px 13px;border-radius:9px;cursor:pointer;font:600 12px var(--sans)}
+.brand{display:flex;align-items:baseline}
+.brand-mark{font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:27px;letter-spacing:1px;line-height:1;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(51,255,102,.45))}
+.brand-sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:10px}
+ .spacer{flex:1}
+ .topnav{display:flex;gap:4px;align-items:center}
+ .nav-link{color:var(--muted);text-decoration:none;font:600 13px var(--sans);padding:7px 12px;border-radius:9px;transition:.15s}
+ .nav-link:hover{color:var(--text);background:var(--bg3)}
+ .nav-link.active{color:var(--green);background:rgba(51,255,102,.08);box-shadow:inset 0 0 0 1px rgba(51,255,102,.15)}
+ .btn{background:var(--bg3);color:var(--text);border:1px solid var(--border2);padding:8px 13px;border-radius:9px;cursor:pointer;font:600 12px var(--sans)}
 .btn:hover{border-color:var(--green);color:var(--green)}
 .novo{max-width:680px;margin:9vh auto 0;padding:0 20px;text-align:center}
-.novo-logo{font:700 46px var(--mono);color:var(--green);letter-spacing:1px;margin-bottom:34px}
+.novo-logo{font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:52px;letter-spacing:2px;margin-bottom:34px;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 16px rgba(51,255,102,.5))}
 .novo-form{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 .novo-input{flex:1;min-width:280px;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:999px;padding:14px 20px;font:15px var(--sans)}
 .novo-input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(51,255,102,.15)}
@@ -775,13 +937,17 @@ a{color:var(--green);text-decoration:none}
  .note{font:12px var(--sans);color:var(--muted);margin-top:16px}
  .novo-params{display:flex;gap:18px;justify-content:center;flex-wrap:wrap;margin-top:16px}
  .novo-params label{font:12px var(--sans);color:var(--muted);display:flex;flex-direction:column;gap:5px;text-align:left}
- .novo-params input{width:130px;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;font:13px var(--mono)}
+  .novo-params input{width:130px;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;font:13px var(--mono)}
+  .novo-params select{width:130px;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;font:13px var(--mono)}
 
 </style></head><body>
 <header class="appbar">
-  <div class="brand">RagThulhu<span class="brand-sub">nova base RAG</span></div>
+  <div class="brand"><span class="brand-mark">RagThulhu</span><span class="brand-sub">nova base RAG</span></div>
+  <nav class="topnav">
+    <a href="/visao-geral" class="nav-link">Visão Geral</a>
+    <a href="/" class="nav-link">Nova base</a>
+  </nav>
   <div class="spacer"></div>
-  <a href="/" class="btn">← Bases RAG</a>
 </header>
 <main class="novo">
   <div class="novo-logo">RagThulhu</div>
@@ -790,7 +956,13 @@ a{color:var(--green);text-decoration:none}
     <button id="novo-go" class="btn novo-btn" type="button">Iniciar RAG</button>
   </form>
   <div class="novo-params">
-    <label>Escopo <input id="novo-escopo" type="number" min="1" max="3" value="2"></label>
+    <label>Escopo
+      <select id="novo-escopo">
+        <option value="1">Só a página inicial (não segue links)</option>
+        <option value="2">1 nível de links (página + filhos diretos)</option>
+        <option value="3">Crawling profundo (2 ou mais níveis)</option>
+      </select>
+    </label>
     <label>Delay (ms) <input id="novo-delay" type="number" min="0" max="60000" value="2000"></label>
     <label>Limite de páginas <input id="novo-limite" type="number" min="0" max="100000" value="0" title="0 = sem limite"></label>
   </div>
@@ -828,5 +1000,11 @@ function go(){
 }
 document.getElementById('novo-go').addEventListener('click', go);
 prefillNovo();
+
+document.querySelectorAll('.topnav .nav-link').forEach(function(a){
+  var h=a.getAttribute('href'), p=location.pathname;
+  var on=(h==='/'&&(p==='/'||p==='/novo'))||(h==='/visao-geral'&&(p==='/visao-geral'||p.indexOf('/rag/')===0));
+  if(on) a.classList.add('active');
+});
 </script>
 </body></html>"""

@@ -135,25 +135,70 @@ class H(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _ollama_info(self):
+        try:
+            import urllib.request as _urllib, json as _json
+            cfg = config_util.load_config()
+            oll = (cfg.get("ollama") or {}) if isinstance(cfg, dict) else {}
+            url = oll.get("url") or "http://localhost:11434"
+            embed = oll.get("embed_model")
+            try:
+                req = _urllib.Request(url.rstrip("/") + "/api/tags", method="GET")
+                with _urllib.urlopen(req, timeout=5) as resp:
+                    data = _json.loads(resp.read().decode("utf-8"))
+                models = [m.get("name") or m.get("model") for m in data.get("models", [])]
+                models = [m for m in models if m]
+                return {"ok": True, "connected": True, "url": url,
+                        "embed_model": embed, "models": models, "error": ""}
+            except Exception as e:
+                return {"ok": False, "connected": False, "url": url,
+                        "embed_model": embed, "models": [], "error": str(e)}
+        except Exception as e:
+            return {"ok": False, "connected": False, "models": [], "error": str(e)}
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        if path in ("/", "/index.html"):
-            self._page(SITE, MAIN_TABS, "")
+        if path in ("/", "/index.html", "/novo", "/novo/"):
+            self._send_page(TEMPLATE_NOVO, SITE, "", "")
+            return
+        if path in ("/visao-geral", "/visao-geral/"):
+            self._send_page(TEMPLATE, SITE, MAIN_TABS, "")
             return
         if path.startswith("/rag/"):
             domain = path[len("/rag/"):].strip("/")
             if not domain:
-                self.redirect("/")
+                self.redirect("/visao-geral")
                 return
             if not SLUG_RE.match(domain):
                 self._json({"error": "dominio invalido"}, 400)
                 return
-            self._page(domain, RAG_TABS, BACK_LINK)
+            self._page(domain, RAG_TABS, "")
             return
-        if path in ("/novo", "/novo/"):
-            self._send(200, TEMPLATE_NOVO.encode("utf-8"), "text/html; charset=utf-8")
+        if path.startswith("/static/"):
+            fname = path[len("/static/"):].strip("/")
+            if not fname or ".." in fname:
+                self._send(400, b"invalido", "text/plain; charset=utf-8")
+                return
+            fpath = ROOT / "static" / fname
+            if not fpath.exists() or not fpath.is_file():
+                self._send(404, b"nao encontrado", "text/plain; charset=utf-8")
+                return
+            ctype = {
+                ".woff2": "font/woff2",
+                ".woff": "font/woff",
+                ".ttf": "font/ttf",
+                ".otf": "font/otf",
+                ".css": "text/css; charset=utf-8",
+                ".js": "application/javascript",
+            }.get(fpath.suffix.lower(), "application/octet-stream")
+            try:
+                data = fpath.read_bytes()
+            except Exception:
+                self._send(500, b"erro", "text/plain; charset=utf-8")
+                return
+            self._send(200, data, ctype)
             return
         if path == "/api/bases":
             self._json({"bases": logdb.list_bases()})
@@ -177,6 +222,9 @@ class H(BaseHTTPRequestHandler):
             return
         if path == "/api/config":
             self._json({"schema": config_util.SCHEMA, "values": config_util.load_config()})
+            return
+        if path == "/api/ollama":
+            self._json(self._ollama_info())
             return
         self._send(404, b"pagina nao encontrada", "text/plain; charset=utf-8")
 
@@ -325,6 +373,17 @@ class H(BaseHTTPRequestHandler):
     def _page(self, site, tabs, back):
         domain_disp = resolve_display_domain(site) if site else ""
         body = (TEMPLATE
+                .replace("__SITE__", site or "")
+                .replace("__DOMAIN__", domain_disp or "")
+                .replace("__WSPORT__", str(WS_PORT))
+                .replace("__TABS__", tabs)
+                .replace("__BACK__", back)
+                ).encode("utf-8")
+        self._send(200, body, "text/html; charset=utf-8")
+
+    def _send_page(self, template, site, tabs, back):
+        domain_disp = resolve_display_domain(site) if site else ""
+        body = (template
                 .replace("__SITE__", site or "")
                 .replace("__DOMAIN__", domain_disp or "")
                 .replace("__WSPORT__", str(WS_PORT))

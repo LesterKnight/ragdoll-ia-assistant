@@ -74,9 +74,13 @@ SCHEMA = [
      "help": "Fixo: nao mudar (quebraria a compatibilidade dos vetores indexados vs consultados)."},
 
     # Coleta (Fase A)
-    {"path": "crawl.escopo", "group": "Coleta (Fase A)", "label": "Escopo", "type": "select",
-     "options": [1, 2, 3], "ui": True,
-     "help": "Profundidade do crawl (1 = so a pagina; 2/3 seguem mais links)."},
+    {"path": "crawl.escopo", "group": "Coleta (Fase A)", "label": "Escopo (profundidade do crawl)", "type": "select",
+     "options": [
+        [1, "Só a página inicial (não segue links)"],
+        [2, "1 nível de links (página + filhos diretos)"],
+        [3, "Crawling profundo (2 ou mais níveis)"],
+     ], "ui": True,
+     "help": "Profundidade do crawl. 1 = apenas a URL informada; 2/3 seguem mais links a partir dela."},
     {"path": "crawl.delay_ms", "group": "Coleta (Fase A)", "label": "Delay entre requisicoes (ms)",
      "type": "number", "min": 0, "max": 60000, "ui": True},
     {"path": "crawl.limite", "group": "Coleta (Fase A)", "label": "Limite de paginas (0 = sem limite)",
@@ -88,21 +92,21 @@ SCHEMA = [
 
     # Indexacao (Fase C)
     {"path": "process.chunk_model", "group": "Indexacao (Fase C)", "label": "Modelo de chunking",
-     "type": "select", "options": MODEL_OPTIONS, "ui": True},
+     "type": "select", "options": MODEL_OPTIONS, "models": True, "ui": True},
     {"path": "process.summary_model", "group": "Indexacao (Fase C)", "label": "Modelo de resumo (vazio = offload)",
-     "type": "select", "options": [""] + MODEL_OPTIONS, "ui": True},
+     "type": "select", "options": [""] + MODEL_OPTIONS, "models": True, "ui": True},
     {"path": "process.num_ctx", "group": "Indexacao (Fase C)", "label": "Contexto (num_ctx)",
      "type": "number", "min": 2048, "max": 131072, "ui": True},
 
     # Consulta (Uso)
     {"path": "query.model", "group": "Consulta (Uso)", "label": "Modelo de resposta",
-     "type": "select", "options": MODEL_OPTIONS, "ui": True},
+     "type": "select", "options": MODEL_OPTIONS, "models": True, "ui": True},
     {"path": "query.topk", "group": "Consulta (Uso)", "label": "Top-k trechos",
      "type": "number", "min": 1, "max": 50, "ui": True},
 
     # Geracao de codigo (Uso)
     {"path": "programador.model", "group": "Geracao de codigo (Uso)", "label": "Modelo de geracao",
-     "type": "select", "options": MODEL_OPTIONS, "ui": True},
+     "type": "select", "options": MODEL_OPTIONS, "models": True, "ui": True},
     {"path": "programador.topk", "group": "Geracao de codigo (Uso)", "label": "Top-k trechos",
      "type": "number", "min": 1, "max": 50, "ui": True},
     {"path": "programador.idioma", "group": "Geracao de codigo (Uso)", "label": "Idioma dos comentarios",
@@ -190,7 +194,8 @@ def _coerce(raw, spec):
         return str(raw).strip().lower() in ("1", "true", "yes", "on")
     if t in ("number", "select"):
         opts = spec.get("options")
-        numeric_opts = opts and all(_is_number(o) for o in opts)
+        opt_vals = [o[0] if isinstance(o, (list, tuple)) else o for o in opts] if opts else None
+        numeric_opts = opt_vals and all(_is_number(v) for v in opt_vals)
         if isinstance(raw, bool):
             raise ValueError("tipo invalido")
         s = str(raw).strip()
@@ -199,10 +204,11 @@ def _coerce(raw, spec):
                 return float(s)
             return int(s)
         # select textual
-        if opts is not None and s not in [str(o) for o in opts] and s not in opts:
-            if s == "" and spec.get("path") == "process.summary_model":
-                return None
-            raise ValueError("valor fora das opcoes")
+        if opt_vals is not None:
+            if s not in [str(v) for v in opt_vals] and s not in opt_vals:
+                if s == "" and spec.get("path") == "process.summary_model":
+                    return None
+                raise ValueError("valor fora das opcoes")
         return s
     # text / url
     return str(raw)
