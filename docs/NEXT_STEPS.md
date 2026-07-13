@@ -1,4 +1,4 @@
-# Next Steps — ragdoll
+# Next Steps — RagThulhu
 
 Lista de melhorias pendentes e ideias para lembrar depois. Nada aqui está implementado.
 

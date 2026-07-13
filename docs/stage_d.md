@@ -1,6 +1,6 @@
 # Etapa D — Avaliação do RAG (genérica, não-Godot)
 
-Esta pasta é a **Etapa D** do ragdoll e fica **isolada do core (A/B/C)** de
+Esta pasta é a **Etapa D** do RagThulhu e fica **isolada do core (A/B/C)** de
 propósito: ela não faz parte do pipeline de construção da base, apenas a mede.
 **Não é específica para Godot** — valida qualquer linguagem cujo compilador/
 checador você informar.

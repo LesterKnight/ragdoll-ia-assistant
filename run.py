@@ -1,5 +1,5 @@
 """
-Orquestrador das fases A -> B -> C do ragdoll.
+Orquestrador das fases A -> B -> C do RagThulhu.
 
 Uso:
     python run.py all --url "<URL>" --escopo 2 --delay 2000
@@ -114,7 +114,7 @@ def cmd_process(args: argparse.Namespace):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Orquestrador ragdoll (A->B->C)")
+    p = argparse.ArgumentParser(description="Orquestrador RagThulhu (A->B->C)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pa = sub.add_parser("all", help="executa A+B+C (Fase C em background)")

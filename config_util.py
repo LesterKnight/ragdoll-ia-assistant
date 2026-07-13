@@ -1,5 +1,5 @@
 """
-Configuracao central do ragdoll (um unico arquivo: config.json).
+Configuracao central do RagThulhu (um unico arquivo: config.json).
 
 Tudo que e parametrizavel e SEGURO de mudar em runtime vive aqui.
 Parametros que quebram o app se alterados entre etapas (ex.: modelo de

@@ -1,4 +1,4 @@
-# ragdoll
+# RagThulhu
 
 Sistema local de **RAG de documentação** com **geração de código fundamentada**.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LogHub - unico ponto de escrita de log do ragdoll.
+"""LogHub - unico ponto de escrita de log do RagThulhu.
 
 Banco SQLite geral (RAG/log.db) com a tabela `log`. Quem gera log
 (pipeline A/B/C) so chama loghub.log(...); nao sabe nada de web/WebSocket.

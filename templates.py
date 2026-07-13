@@ -1,4 +1,4 @@
-# Templates (HTML/CSS/JS) do servidor web ragdoll.
+# Templates (HTML/CSS/JS) do servidor web RagThulhu.
 # Strings com placeholders: __SITE__, __WSPORT__, __TABS__, __BACK__.
 # Dados reais vêm do WebSocket (snapshot/event/status) e dos endpoints /api/*.
 # Mock so existe atras do parametro ?mock=1 (teste visual offline).
@@ -19,7 +19,7 @@ RAG_TABS = (
 BACK_LINK = '<a href="/" class="btn">← Bases RAG</a>'
 
 HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-<title>ragdoll — painel de serviço</title>
+<title>RagThulhu — painel de serviço</title>
 <style>
  :root{
   --bg:#0b0d10; --bg2:#111418; --bg3:#161b21; --border:#222a31; --border2:#2c363f;
@@ -143,7 +143,7 @@ HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
   .btn.danger:hover{background:#ff8585;color:#1a0000}
  </style></head><body>
 <header class="appbar">
-  <div class="brand">ragdoll<span class="brand-sub">base: __DOMAIN__</span></div>
+  <div class="brand">RagThulhu<span class="brand-sub">base: __DOMAIN__</span></div>
   <div class="spacer"></div>
   __BACK__
   <span id="status" class="badge stop">conectando…</span>
@@ -744,7 +744,7 @@ if (MOCK) loadMock();
 TEMPLATE = HTML
 
 TEMPLATE_NOVO = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-<title>ragdoll — nova base</title>
+<title>RagThulhu — nova base</title>
 <style>
 :root{--bg:#0b0d10;--bg3:#161b21;--border2:#2c363f;--text:#d6dbe0;--muted:#7d8794;--green:#33ff66;--sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--mono:'JetBrains Mono','Fira Code',Consolas,monospace}
 *{box-sizing:border-box}
@@ -769,12 +769,12 @@ a{color:var(--green);text-decoration:none}
 
 </style></head><body>
 <header class="appbar">
-  <div class="brand">ragdoll<span class="brand-sub">nova base RAG</span></div>
+  <div class="brand">RagThulhu<span class="brand-sub">nova base RAG</span></div>
   <div class="spacer"></div>
   <a href="/" class="btn">← Bases RAG</a>
 </header>
 <main class="novo">
-  <div class="novo-logo">ragdoll</div>
+  <div class="novo-logo">RagThulhu</div>
   <form id="novo-form" class="novo-form">
     <input id="novo-url" class="novo-input" type="url" placeholder="cole o hyperlink do site (ex: https://docs.godotengine.org/...)" autocomplete="off">
     <button id="novo-go" class="btn novo-btn" type="button">Iniciar RAG</button>

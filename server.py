@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Servidor web do ragdoll (antigo monitor.py).
+"""Servidor web do RagThulhu (antigo monitor.py).
 
 - HTTP na porta 8765 serve as paginas (frontend/observer).
 - WebSocket na porta 8766 empurra os logs ao vivo + status (observer pattern).
@@ -366,7 +366,7 @@ def main():
         target=lambda: ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), H).serve_forever(),
         daemon=True,
     ).start()
-    print(f"Servidor ragdoll: http://0.0.0.0:{HTTP_PORT}  (WebSocket :{WS_PORT}, site={SITE})")
+    print(f"Servidor RagThulhu: http://0.0.0.0:{HTTP_PORT}  (WebSocket :{WS_PORT}, site={SITE})")
 
     async def serve():
         async with websockets.serve(handler, "0.0.0.0", WS_PORT):
