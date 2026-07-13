@@ -20,8 +20,10 @@ BACK_LINK = '<a href="/visao-geral" class="btn">← Visão Geral</a>'
 
 HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>RagThulhu — painel de serviço</title>
+ <link rel="icon" href="/static/ct.ico">
+ <link rel="preload" href="/static/cthulhu-calling.woff2" as="font" type="font/woff2" crossorigin>
  <style>
-  @font-face{font-family:'Cthulhu Calling';src:url('/static/cthulhu-calling.woff2') format('woff2');font-display:swap;}
+  @font-face{font-family:'Cthulhu Calling';src:url('/static/cthulhu-calling.woff2') format('woff2');font-display:block;}
   :root{
   --bg:#0b0d10; --bg2:#111418; --bg3:#161b21; --border:#222a31; --border2:#2c363f;
   --text:#d6dbe0; --muted:#7d8794; --green:#33ff66; --green2:#66ff99; --accent:#6cf;
@@ -33,8 +35,8 @@ HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
  a{color:var(--green)}
  .appbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:12px 18px;background:rgba(11,13,16,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
-  .brand{display:flex;align-items:baseline}
-  .brand-mark{font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:27px;letter-spacing:1px;line-height:1;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(51,255,102,.45))}
+  .brand{display:flex;align-items:baseline;cursor:pointer}
+  .brand-mark{font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:27px;letter-spacing:1px;line-height:1;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(51,255,102,.45));user-select:none;-webkit-user-select:none}
   .brand-sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:10px}
   .spacer{flex:1}
   .topnav{display:flex;gap:4px;align-items:center}
@@ -161,11 +163,10 @@ HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
   .btn.danger:hover{background:#ff8585;color:#1a0000}
  </style></head><body>
 <header class="appbar">
-   <div class="brand"><span class="brand-mark">RagThulhu</span><span class="brand-sub" id="brand-status">status: Parado</span></div>
-  <nav class="topnav">
-    <a href="/visao-geral" class="nav-link">Visão Geral</a>
-    <a href="/" class="nav-link">Nova base</a>
-  </nav>
+   <a href="/" class="brand"><span class="brand-mark">RagThulhu</span></a>
+    <nav class="topnav">
+      <a href="/visao-geral" class="nav-link">Visão Geral</a>
+    </nav>
   <div class="spacer"></div>
   <span id="status" class="badge stop">conectando…</span>
 </header>
@@ -872,9 +873,11 @@ const ollamaRefresh=document.getElementById('ollama-refresh');
 if(ollamaRefresh) ollamaRefresh.addEventListener('click', fetchOllama);
 
 document.querySelectorAll('.topnav .nav-link').forEach(function(a){
-  var h=a.getAttribute('href'), p=location.pathname;
-  var on=(h==='/'&&(p==='/'||p==='/novo'))||(h==='/visao-geral'&&(p==='/visao-geral'||p.indexOf('/rag/')===0));
-  if(on) a.classList.add('active');
+   var h=a.getAttribute('href'), p=location.pathname;
+   var isHome=(p==='/'||p==='/novo'), isVisao=(p==='/visao-geral');
+   if ((isHome && h==='/') || (isVisao && h==='/visao-geral')) a.style.display='none';
+   var on=(h==='/'&&isHome)||(h==='/visao-geral'&&(isVisao||p.indexOf('/rag/')===0));
+   if(on) a.classList.add('active');
 });
 
 /* ---------- Mock (apenas com ?mock=1) ---------- */
@@ -911,25 +914,35 @@ TEMPLATE = HTML
 
 TEMPLATE_NOVO = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>RagThulhu — nova base</title>
+ <link rel="icon" href="/static/ct.ico">
+ <link rel="preload" href="/static/cthulhu-calling.woff2" as="font" type="font/woff2" crossorigin>
  <style>
- @font-face{font-family:'Cthulhu Calling';src:url('/static/cthulhu-calling.woff2') format('woff2');font-display:swap;}
- :root{--bg:#0b0d10;--bg3:#161b21;--border2:#2c363f;--text:#d6dbe0;--muted:#7d8794;--green:#33ff66;--sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--mono:'JetBrains Mono','Fira Code',Consolas,monospace}
+ @font-face{font-family:'Cthulhu Calling';src:url('/static/cthulhu-calling.woff2') format('woff2');font-display:block;}
+  :root{--bg:#0b0d10;--bg2:#111418;--bg3:#161b21;--border:#222a31;--border2:#2c363f;--text:#d6dbe0;--muted:#7d8794;--green:#33ff66;--warn:#ffd27d;--sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--mono:'JetBrains Mono','Fira Code',Consolas,monospace}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
 a{color:var(--green);text-decoration:none}
-.appbar{display:flex;align-items:center;gap:14px;padding:12px 18px;background:rgba(11,13,16,.9);border-bottom:1px solid var(--border2)}
-.brand{display:flex;align-items:baseline}
-.brand-mark{font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:27px;letter-spacing:1px;line-height:1;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(51,255,102,.45))}
+ .appbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:12px 18px;background:rgba(11,13,16,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:baseline;cursor:pointer}
+.brand-mark{font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:27px;letter-spacing:1px;line-height:1;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(51,255,102,.45));user-select:none;-webkit-user-select:none}
 .brand-sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:10px}
  .spacer{flex:1}
  .topnav{display:flex;gap:4px;align-items:center}
  .nav-link{color:var(--muted);text-decoration:none;font:600 13px var(--sans);padding:7px 12px;border-radius:9px;transition:.15s}
  .nav-link:hover{color:var(--text);background:var(--bg3)}
- .nav-link.active{color:var(--green);background:rgba(51,255,102,.08);box-shadow:inset 0 0 0 1px rgba(51,255,102,.15)}
- .btn{background:var(--bg3);color:var(--text);border:1px solid var(--border2);padding:8px 13px;border-radius:9px;cursor:pointer;font:600 12px var(--sans)}
+  .nav-link.active{color:var(--green);background:rgba(51,255,102,.08);box-shadow:inset 0 0 0 1px rgba(51,255,102,.15)}
+  .badge{display:inline-block;padding:3px 11px;border-radius:999px;font:600 11px var(--sans);border:1px solid var(--border2)}
+  .badge.ok{color:#7cffb0;background:rgba(51,255,102,.1);border-color:rgba(51,255,102,.3)}
+  .badge.stop{color:var(--muted)}
+  .badge.run{color:var(--warn);background:rgba(255,200,80,.1);border-color:rgba(255,200,80,.3)}
+  .badge.fail{color:#ff8a8a;background:rgba(255,80,80,.1);border-color:rgba(255,80,80,.3)}
+  .btn{background:var(--bg3);color:var(--text);border:1px solid var(--border2);padding:8px 13px;border-radius:9px;cursor:pointer;font:600 12px var(--sans)}
 .btn:hover{border-color:var(--green);color:var(--green)}
-.novo{max-width:680px;margin:9vh auto 0;padding:0 20px;text-align:center}
-.novo-logo{font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:52px;letter-spacing:2px;margin-bottom:34px;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 16px rgba(51,255,102,.5))}
+.novo{position:relative;max-width:680px;margin:6vh auto 0;padding:0 20px;text-align:center}
+.novo-logo{position:relative;z-index:1;font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:52px;letter-spacing:2px;margin-bottom:8px;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 16px rgba(51,255,102,.5));user-select:none;-webkit-user-select:none}
+.novo-sub{color:var(--muted);font:14px var(--sans);letter-spacing:.4px;margin-bottom:34px}
+.novo-glow{position:absolute;top:0;left:50%;width:340px;height:50px;transform:translateX(-50%) scale(1);transform-origin:bottom center;border-radius:50%;background:radial-gradient(ellipse at center, rgba(51,255,102,.30) 0%, rgba(51,255,102,0) 70%);filter:blur(12px);pointer-events:none;z-index:0;animation:glowBreath 8s ease-in-out infinite}
+@keyframes glowBreath{0%{transform:translateX(-50%) scale(.9)}50%{transform:translateX(-50%) scale(1.1)}100%{transform:translateX(-50%) scale(.9)}}
 .novo-form{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 .novo-input{flex:1;min-width:280px;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:999px;padding:14px 20px;font:15px var(--sans)}
 .novo-input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(51,255,102,.15)}
@@ -942,15 +955,17 @@ a{color:var(--green);text-decoration:none}
 
 </style></head><body>
 <header class="appbar">
-  <div class="brand"><span class="brand-mark">RagThulhu</span><span class="brand-sub">nova base RAG</span></div>
-  <nav class="topnav">
-    <a href="/visao-geral" class="nav-link">Visão Geral</a>
-    <a href="/" class="nav-link">Nova base</a>
-  </nav>
-  <div class="spacer"></div>
+   <a href="/" class="brand"><span class="brand-mark">RagThulhu</span></a>
+   <nav class="topnav">
+     <a href="/visao-geral" class="nav-link">Visão Geral</a>
+   </nav>
+   <div class="spacer"></div>
+   <span id="status" class="badge stop">conectando…</span>
 </header>
 <main class="novo">
+  <div class="novo-glow"></div>
   <div class="novo-logo">RagThulhu</div>
+  <div class="novo-sub">Assimilar. Isolar. Despertar.</div>
   <form id="novo-form" class="novo-form">
     <input id="novo-url" class="novo-input" type="url" placeholder="cole o hyperlink do site (ex: https://docs.godotengine.org/...)" autocomplete="off">
     <button id="novo-go" class="btn novo-btn" type="button">Iniciar RAG</button>
@@ -1002,9 +1017,35 @@ document.getElementById('novo-go').addEventListener('click', go);
 prefillNovo();
 
 document.querySelectorAll('.topnav .nav-link').forEach(function(a){
-  var h=a.getAttribute('href'), p=location.pathname;
-  var on=(h==='/'&&(p==='/'||p==='/novo'))||(h==='/visao-geral'&&(p==='/visao-geral'||p.indexOf('/rag/')===0));
-  if(on) a.classList.add('active');
+   var h=a.getAttribute('href'), p=location.pathname;
+   var isHome=(p==='/'||p==='/novo'), isVisao=(p==='/visao-geral');
+   if ((isHome && h==='/') || (isVisao && h==='/visao-geral')) a.style.display='none';
+   var on=(h==='/'&&isHome)||(h==='/visao-geral'&&(isVisao||p.indexOf('/rag/')===0));
+   if(on) a.classList.add('active');
 });
+var statusEl=document.getElementById('status');
+fetch('/api/bases').then(function(r){ if(r.ok){ statusEl.textContent='online'; statusEl.className='badge ok'; } else { throw new Error('bad'); } })
+  .catch(function(){ statusEl.textContent='offline'; statusEl.className='badge fail'; });
+
+(function(){
+  var logo=document.querySelector('.novo-logo'); if(!logo) return;
+  var base='drop-shadow(0 0 16px rgba(51,255,102,.5))';
+  function stable(){
+    logo.style.filter=base; logo.style.opacity='1';
+    setTimeout(function(){ if(Math.random()<0.5) burst(); else stable(); }, 3000+Math.random()*3000);
+  }
+  function burst(){
+    var frames=2+Math.floor(Math.random()*3), i=0;
+    (function step(){
+      var lit=Math.random()>0.45;
+      logo.style.opacity = lit ? '1' : (0.3+Math.random()*0.2).toFixed(2);
+      logo.style.filter = lit ? base : 'drop-shadow(0 0 6px rgba(51,255,102,.12))';
+      if(++i<frames) setTimeout(step, 25+Math.random()*45);
+      else if(Math.random()<0.5) setTimeout(burst, 120+Math.random()*200);
+      else stable();
+    })();
+  }
+  stable();
+})();
 </script>
 </body></html>"""

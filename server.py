@@ -192,6 +192,9 @@ class H(BaseHTTPRequestHandler):
                 ".otf": "font/otf",
                 ".css": "text/css; charset=utf-8",
                 ".js": "application/javascript",
+                ".ico": "image/x-icon",
+                ".png": "image/png",
+                ".svg": "image/svg+xml",
             }.get(fpath.suffix.lower(), "application/octet-stream")
             try:
                 data = fpath.read_bytes()
