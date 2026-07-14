@@ -809,6 +809,8 @@ if (tabsEl){
     activateTab(b.dataset.t);
   });
 }
+var _hashTab = (location.hash || '').slice(1);
+if (_hashTab) activateTab(_hashTab);
 document.getElementById('btn-novo').addEventListener('click', function(){ location.href = '/novo'; });
 document.getElementById('uso-mode-query').addEventListener('click', function(){ setUsoMode('query'); });
 document.getElementById('uso-mode-prog').addEventListener('click', function(){ setUsoMode('programador'); });
@@ -946,17 +948,21 @@ a{color:var(--green);text-decoration:none}
 .novo-sub{color:var(--muted);font:14px var(--sans);letter-spacing:.4px;margin-bottom:34px}
 .novo-glow{position:absolute;top:0;left:50%;width:340px;height:50px;transform:translateX(-50%) scale(1);transform-origin:bottom center;border-radius:50%;background:radial-gradient(ellipse at center, rgba(51,255,102,.30) 0%, rgba(51,255,102,0) 70%);filter:blur(12px);pointer-events:none;z-index:0;animation:glowBreath 8s ease-in-out infinite}
 @keyframes glowBreath{0%{transform:translateX(-50%) scale(.9)}50%{transform:translateX(-50%) scale(1.1)}100%{transform:translateX(-50%) scale(.9)}}
-.novo-form{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-.novo-input{flex:1;min-width:280px;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:999px;padding:14px 20px;font:15px var(--sans)}
-.novo-input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(51,255,102,.15)}
-.novo-btn{padding:14px 22px;border-radius:999px;font-size:14px}
+ .novo-form{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap}
+ .novo-field{position:relative;flex:1;min-width:280px;display:flex;align-items:center}
+ .novo-input{flex:1;width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:14px 150px 14px 16px;font:15px var(--sans)}
+ .novo-input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(51,255,102,.15)}
+ .novo-btn{position:absolute;right:6px;top:6px;bottom:6px;height:auto;display:flex;align-items:center;gap:6px;padding:0 16px;border-radius:6px;font-size:14px;transition:background .2s,color .2s,border-color .2s}
+ .novo-btn:hover{background:rgba(51,255,102,.18);color:var(--green);border-color:var(--green)}
+ .novo-btn .eye{opacity:0;transition:opacity .25s}
+ .novo-btn:hover .eye{opacity:1}
  .note{font:12px var(--sans);color:var(--muted);margin-top:16px}
  .novo-params{display:flex;gap:18px;justify-content:center;flex-wrap:wrap;margin-top:16px}
  .novo-params label{font:12px var(--sans);color:var(--muted);display:flex;flex-direction:column;gap:5px;text-align:left}
   .novo-params input{width:130px;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;font:13px var(--mono)}
    .novo-params select{width:130px;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;font:13px var(--mono)}
     .novo-scroll{position:relative;margin:34px auto 30px;max-width:560px;text-align:left}
-    #parchment{position:absolute;top:0;left:0;width:100%;margin:0;padding:1.7em 3em;box-shadow:2px 3px 18px rgba(0,0,0,.6), 0 0 70px #2e1d0e inset;background:#6b5638;filter:url(#wavy2);
+    #parchment{position:absolute;top:0;left:0;width:100%;margin:0;padding:1.7em 3em;box-shadow:2px 3px 18px rgba(0,0,0,.6), inset 0 0 45px 8px rgba(30,18,8,.55);background:#6b5638;background-size:100px 100px;background-repeat:repeat;filter:url(#wavy2);
       background-image:url(data:image/png;base64,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);}
     #parchment:after{content:"";position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;background:linear-gradient(rgb(180 158 132 / 55%), rgb(225 207 186 / 55%));}
     #contain{position:relative;display:flex;flex-direction:column;width:100%;height:auto;margin:0 auto;padding:1.7em 3em;z-index:1}
@@ -980,6 +986,7 @@ a{color:var(--green);text-decoration:none}
       <a href="/visao-geral" class="nav-link">Bases RAG</a>
       <a href="/visao-geral" class="nav-link">Uso</a>
       <a href="/visao-geral" class="nav-link">Configurações</a>
+      <a href="#" class="nav-link js-open-papyrus">Instruções</a>
    </nav>
    <div class="spacer"></div>
    <span id="status" class="badge stop">conectando…</span>
@@ -990,8 +997,10 @@ a{color:var(--green);text-decoration:none}
   <div class="novo-logo">RagThulhu</div>
   <div class="novo-sub">Assimilar. Isolar. Despertar.</div>
   <form id="novo-form" class="novo-form">
-    <input id="novo-url" class="novo-input" type="url" placeholder="cole o hyperlink do site (ex: https://docs.godotengine.org/...)" autocomplete="off">
-    <button id="novo-go" class="btn novo-btn" type="button">Romper o Véu</button>
+    <div class="novo-field">
+      <input id="novo-url" class="novo-input" type="url" placeholder="cole o hyperlink do site (ex: https://docs.godotengine.org/...)">
+      <button id="novo-go" class="btn novo-btn" type="button">Observar<span class="eye">👁️</span></button>
+    </div>
   </form>
   <div class="novo-params">
      <label>Escopo
@@ -1005,8 +1014,6 @@ a{color:var(--green);text-decoration:none}
     <label>Limite de páginas <input id="novo-limite" type="number" min="0" max="100000" value="0" title="0 = sem limite"></label>
   </div>
    <div id="novo-msg" class="note"></div>
-   <p class="novo-instr-label">Instruções</p>
-   <button id="open-papyrus" class="btn" type="button">Abrir pergaminho</button>
    <div id="papyrus-modal" class="modal" hidden>
      <div class="modal-backdrop" data-close></div>
      <div class="modal-box">
@@ -1051,7 +1058,7 @@ function go(){
     .then(function(res){
       if(res.error){ msg.textContent='erro: '+res.error; return; }
       msg.textContent='Pipeline iniciado ('+res.domain+'). Acompanhe os logs...';
-      setTimeout(function(){ location.href='/rag/'+encodeURIComponent(res.slug); }, 900);
+      setTimeout(function(){ location.href='/rag/'+encodeURIComponent(res.slug)+'#A'; }, 900);
     })
     .catch(function(e){ msg.textContent='erro de rede: '+e; });
 }
@@ -1092,6 +1099,7 @@ if(document.readyState!=='loading') initParchment(); else document.addEventListe
   if(openBtn) openBtn.addEventListener('click', openParchment);
   if(closeBtn) closeBtn.addEventListener('click', closeParchment);
   if(backdrop) backdrop.addEventListener('click', closeParchment);
+  document.querySelectorAll('.js-open-papyrus').forEach(function(b){ b.addEventListener('click', function(e){ e.preventDefault(); openParchment(); }); });
   document.addEventListener('keydown', function(e){ if(e.key==='Escape' && !modal.hidden) closeParchment(); });
 })();
 
