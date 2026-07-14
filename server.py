@@ -359,18 +359,6 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
-        # ---- excluir base ----
-        m = re.match(r"^/api/bases/([a-z0-9]+)/delete$", path)
-        if m:
-            slug = m.group(1)
-            folder = ROOT / "RAG" / slug
-            if not folder.exists():
-                self._json({"error": "base inexistente"}, 404)
-                return
-            shutil.rmtree(folder)
-            self._json({"slug": slug, "message": "base removida"})
-            return
-
         self._json({"error": "rota nao encontrada"}, 404)
 
     def _page(self, site, tabs, back):
@@ -420,6 +408,7 @@ def main():
             i += 2
             continue
         i += 1
+    logdb.ensure()
     if not SITE:
         SITE = logdb._autosite()
     HTTP_PORT = http_port

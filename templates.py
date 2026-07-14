@@ -35,7 +35,7 @@ HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
  a{color:var(--green)}
  .appbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:12px 18px;background:rgba(11,13,16,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
-   .brand{display:flex;align-items:baseline}
+   .brand{display:flex;align-items:baseline;text-decoration:none}
    .brand-mark{font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:27px;letter-spacing:1px;line-height:1;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(51,255,102,.45));user-select:none;-webkit-user-select:none}
   .brand-sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:10px}
   .spacer{flex:1}
@@ -163,7 +163,7 @@ HTML = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
   .btn.danger:hover{background:#ff8585;color:#1a0000}
  </style></head><body>
 <header class="appbar">
-   <span class="brand"><span class="brand-mark">RagThulhu</span></span>
+   <a href="/" class="brand"><span class="brand-mark">RagThulhu</span></a>
     <nav class="topnav">
       <a href="/visao-geral" class="nav-link">Visão Geral</a>
     </nav>
@@ -344,8 +344,8 @@ __TABS__
     </div>
     <div class="card danger-zone">
       <div class="card-head"><h2>Zona de perigo</h2></div>
-      <div class="alert-danger">Isto apaga permanentemente o banco de log (<b>RAG/log.db</b>) e <b>TODOS</b> os artefatos gerados: bases RAG crawleadas e resultados de benchmark. Não afeta código-fonte nem <b>config.json</b>. A ação <b>não pode ser desfeita</b>.</div>
-      <button class="btn danger" id="wipe-btn">Limpar tudo (banco + artefatos)</button>
+      <div class="alert-danger">Isto <b>esquece todo o trabalho</b>: apaga permanentemente (delete físico) todos os registros/logs, o conteúdo de trabalho das bases <b>e as próprias pastas das bases</b> (HTML crawleado, chunks, índices, resultados de benchmark). O banco de log (<b>RAG/log.db</b>) preserva a estrutura. Não afeta código-fonte nem <b>config.json</b>. A ação <b>não pode ser desfeita</b>.</div>
+      <button class="btn danger" id="wipe-btn">Esquecer todo o trabalho (apagar bases + logs)</button>
       <div id="wipe-status" class="note"></div>
     </div>
   </section>
@@ -562,17 +562,15 @@ function loadBases(){
       const tdAct=document.createElement('td'); const acts=document.createElement('div'); acts.className='actions';
       const bZip=document.createElement('button'); bZip.className='btn'; bZip.textContent='Exportar .zip';
       bZip.addEventListener('click',function(){ baseAction('zip',b.slug); });
-      const bDel=document.createElement('button'); bDel.className='btn danger'; bDel.textContent='Excluir';
-      bDel.addEventListener('click',function(){ baseAction('del',b.slug); });
-      acts.appendChild(bZip); acts.appendChild(bDel); tdAct.appendChild(acts);
+      acts.appendChild(bZip); tdAct.appendChild(acts);
       tr.appendChild(tdDomain); tr.appendChild(tdSit); tr.appendChild(tdExec); tr.appendChild(tdTrain); tr.appendChild(tdAct);
       body.appendChild(tr);
     });
   }).catch(function(){});
 }
 function baseAction(act, slug){
-  if(act==='del' && !confirm('Excluir a base "'+slug+'"? Isso remove a pasta RAG/'+slug)) return;
-  fetch('/api/bases/'+encodeURIComponent(slug)+'/'+(act==='zip'?'zip':'delete'), {method:'POST'})
+  if(act!=='zip') return;
+  fetch('/api/bases/'+encodeURIComponent(slug)+'/zip', {method:'POST'})
     .then(function(){ loadBases(); }).catch(function(e){ alert('erro: '+e); });
 }
 
@@ -928,7 +926,7 @@ TEMPLATE_NOVO = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--sans)}
 a{color:var(--green);text-decoration:none}
  .appbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:12px 18px;background:rgba(11,13,16,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)}
-.brand{display:flex;align-items:baseline;cursor:pointer}
+.brand{display:flex;align-items:baseline;cursor:pointer;text-decoration:none}
 .brand-mark{font-family:'Cthulhu Calling',var(--mono);font-weight:400;font-size:27px;letter-spacing:1px;line-height:1;background:linear-gradient(180deg,#aaffcc,#33ff66 60%,#1fbf4d);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(51,255,102,.45));user-select:none;-webkit-user-select:none}
 .brand-sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:10px}
  .spacer{flex:1}
@@ -983,9 +981,7 @@ a{color:var(--green);text-decoration:none}
 </style></head><body>
 <header class="appbar">
    <nav class="topnav">
-      <a href="/visao-geral" class="nav-link">Bases RAG</a>
-      <a href="/visao-geral" class="nav-link">Uso</a>
-      <a href="/visao-geral" class="nav-link">Configurações</a>
+      <a href="/visao-geral" class="nav-link">Visão Geral</a>
       <a href="#" class="nav-link js-open-papyrus">Instruções</a>
    </nav>
    <div class="spacer"></div>
@@ -1045,7 +1041,8 @@ function prefillNovo(){
   }).catch(function(){});
 }
 function go(){
-  var url=document.getElementById('novo-url').value;
+  var raw=document.getElementById('novo-url').value;
+  var url=/^https?:\/\//i.test(raw) ? raw : 'http://'+raw;
   var dom=domainFromUrl(url);
   var msg=document.getElementById('novo-msg');
   if(!dom || !/^[a-z0-9.-]+\\.[a-z]{2,}$/i.test(dom)){ msg.textContent='Informe um hyperlink valido (ex: https://docs.site.com).'; return; }

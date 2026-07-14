@@ -65,6 +65,29 @@ def after(site: str, last_id: int):
     )
 
 
+def ensure():
+    """Garante que o banco e a tabela log existem (robustez de arranque)."""
+    try:
+        DB.parent.mkdir(parents=True, exist_ok=True)
+        c = sqlite3.connect(str(DB))
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS log (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                site      TEXT NOT NULL,
+                etapa     TEXT NOT NULL,
+                tipo_log  TEXT NOT NULL,
+                log       TEXT NOT NULL,
+                data_hora TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        c.commit()
+        c.close()
+    except Exception as e:
+        print("logdb.ensure falhou:", e)
+
+
 def _autosite():
     try:
         c = sqlite3.connect(str(DB))
@@ -349,21 +372,38 @@ def list_bases() -> list:
 
 
 def wipe_all() -> dict:
-    """Apaga banco de log e TODOS os artefatos gerados (bases RAG + benchmark).
+    """Limpar tudo (Esquecer todo o trabalho) = delete fisico de TUDO o que e
+    trabalho, incluindo as proprias pastas das bases:
+    - Apaga (delete fisico) todos os registros da tabela `log`.
+    - APAGA as pastas das bases (RAG/<slug>) por completo.
+    - Remove artefatos de benchmark.
+    NUNCA apaga o proprio banco (log.db) -- a estrutura/tabela e preservada.
     Nao toca em codigo-fonte nem em config.json."""
+    ensure()
     removed = []
     rag = BASE / "RAG"
-    if rag.exists():
-        for child in rag.iterdir():
-            try:
-                if child.is_dir():
-                    shutil.rmtree(child)
-                else:
-                    child.unlink()
-                removed.append(str(child.relative_to(BASE)))
-            except Exception:
-                pass
-    # resultados de benchmark (stage_d/)
+    rag.mkdir(parents=True, exist_ok=True)
+    for child in rag.iterdir():
+        if child.name.startswith("log.db"):
+            continue  # nunca toca no banco de log
+        try:
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+            removed.append(str(child.relative_to(BASE)))
+        except Exception:
+            pass
+    # zera os registros de log (mantem a estrutura/banco intacto)
+    try:
+        c = sqlite3.connect(str(DB))
+        n = c.execute("DELETE FROM log").rowcount
+        c.commit()
+        c.close()
+        removed.append(f"log ({n} registros)")
+    except Exception:
+        pass
+    # artefatos de benchmark
     bench = BASE / "stage_d" / "benchmark_results.jsonl"
     if bench.exists():
         try:
