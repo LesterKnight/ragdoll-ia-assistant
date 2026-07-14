@@ -185,6 +185,7 @@ Ganho: a GPU local passa a rodar só `qwen2.5-coder:1.5b` (chunk, 1GB) + `nomic-
 ├── requirements.txt              ← dependências Python
 ├── docs/                          ← documentação centralizada
 │   ├── README.md                  ← este documento (fonte única)
+│   ├── pipeline.md                ← arquitetura: arquivos e orquestração (A/B/C/D + run.py)
 │   ├── NEXT_STEPS.md              ← próximos passos e ideias
 │   ├── gaps_qwythos_gdscript.md   ← baseline Qwythos SEM RAG (análise)
 │   └── stage_d.md                 ← documentação da Etapa D
