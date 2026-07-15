@@ -994,7 +994,7 @@ a{color:var(--green);text-decoration:none}
   <div class="novo-sub">Assimilar. Isolar. Despertar.</div>
   <form id="novo-form" class="novo-form">
     <div class="novo-field">
-      <input id="novo-url" class="novo-input" type="url" placeholder="cole o hyperlink do site (ex: https://docs.godotengine.org/...)">
+      <input id="novo-url" class="novo-input" type="text" placeholder="cole o hyperlink do site (ex: https://docs.godotengine.org/ ou docs.site.com)">
       <button id="novo-go" class="btn novo-btn" type="button">Observar<span class="eye">👁️</span></button>
     </div>
   </form>
@@ -1042,10 +1042,11 @@ function prefillNovo(){
 }
 function go(){
   var raw=document.getElementById('novo-url').value;
-  var url=/^https?:\/\//i.test(raw) ? raw : 'http://'+raw;
+  if(!raw.trim()){ document.getElementById('novo-msg').textContent='Informe o endereco do site.'; return; }
+  var url=/^https?:\/\//i.test(raw.trim()) ? raw.trim() : 'http://'+raw.trim();
   var dom=domainFromUrl(url);
   var msg=document.getElementById('novo-msg');
-  if(!dom || !/^[a-z0-9.-]+\\.[a-z]{2,}$/i.test(dom)){ msg.textContent='Informe um hyperlink valido (ex: https://docs.site.com).'; return; }
+  if(!dom){ msg.textContent='Informe um hyperlink valido (ex: https://docs.site.com).'; return; }
   var escopo=parseInt(document.getElementById('novo-escopo').value)||2;
   var delay=parseInt(document.getElementById('novo-delay').value)||2000;
   var limite=parseInt(document.getElementById('novo-limite').value)||0;
